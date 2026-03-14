@@ -42,11 +42,13 @@ wrapper = HollandWrapper(
 # Generate cases (build)
 print("Generating cases in directory:", output_dir)
 df_context = wrapper.get_context()
+print(df_context)
 
 #wrapper.build_cases(cases=[0, 1, 2])
 wrapper.build_cases()
 
 df_context = wrapper.get_context()
-
-wrapper.run_cases_in_background(launcher="sleep 10", num_workers=2)
+wrapper.run_cases(launcher="echo 'hello'")
+wrapper.monitor_cases()
+#wrapper.run_cases_in_background(launcher="sleep 100 && echo 'hello'", detached=True, num_workers=2)
 #wrapper.run_cases(launcher="sbatch /nfs/home/geocean/valvanuz/model_wrappers/examples/launchers/slurm_xbeach.sh")

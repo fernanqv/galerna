@@ -4,6 +4,7 @@ import shutil
 from typing import Optional
 
 
+
 def get_simple_logger(
     name: str, level: str = "INFO", log_file: Optional[str] = None, console: bool = True
 ) -> logging.Logger:

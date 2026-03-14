@@ -1,0 +1,19 @@
+{
+    "templates_dir": "templates/xbeach_holland_default",
+    "output_dir": "test_cli_output",
+    "variable_parameters": {
+        "var1": [
+            225,
+            226
+        ],
+        "var2": [
+            514,
+            315
+        ]
+    },
+    "fixed_parameters": {},
+    "cases_name_format": "holland_{var1:04}_{var2:04}",
+    "mode": "all_combinations",
+    "launcher": "sleep 10 && echo 'Running case'",
+    "num_workers": 2
+}

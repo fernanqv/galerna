@@ -1,6 +1,6 @@
 {
     "name": "model_wrappers",
-    "image": "delftwaves/swash-tutorial:latest",
+    "image": "geoocean/rocky8:1.5",
     "customizations": {
         "vscode": {
             "settings": {

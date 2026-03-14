@@ -1,0 +1,16 @@
+{
+    "name": "model_wrappers",
+    "image": "delftwaves/swash-tutorial:latest",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-toolsai.jupyter",
+                "ms-toolsai.datawrangler"
+            ]
+        }
+    }
+}

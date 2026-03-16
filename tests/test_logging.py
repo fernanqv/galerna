@@ -1,7 +1,7 @@
 import os
 import shutil
 import shutil
-from model_wrappers import ModelWrapper
+from galerna import Galerna
 
 def test_combined_logging():
     output_dir = "test_log_output"
@@ -16,7 +16,7 @@ def test_combined_logging():
     variable_parameters = {"p": [1]}
     fixed_parameters = {}
 
-    wrapper = ModelWrapper(
+    wrapper = Galerna(
         templates_dir=None,
         variable_parameters=variable_parameters,
         fixed_parameters=fixed_parameters,
@@ -45,7 +45,7 @@ def test_separate_logging():
 
     launcher = 'echo "out" && echo "err" >&2'
 
-    wrapper = ModelWrapper(
+    wrapper = Galerna(
         templates_dir=None,
         variable_parameters={"p": [1]},
         fixed_parameters={},

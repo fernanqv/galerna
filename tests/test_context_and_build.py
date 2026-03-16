@@ -1,6 +1,6 @@
 import os
 import shutil
-from model_wrappers import ModelWrapper
+from galerna import Galerna
 
 def test_context_and_build():
     output_dir = "test_output"
@@ -14,7 +14,7 @@ def test_context_and_build():
     }
     fixed_parameters = {"fixed": 100}
 
-    wrapper = ModelWrapper(
+    wrapper = Galerna(
         templates_dir=None,
         variable_parameters=variable_parameters,
         fixed_parameters=fixed_parameters,

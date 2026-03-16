@@ -16,7 +16,7 @@ from .execution import exec_bash_command, parallel_execute
 from .utils import copy_files, get_simple_logger, write_array_in_file
 
 
-class ModelWrapper:
+class Galerna:
     """
     Base class for numerical models wrappers.
     Autonomous implementation without external core dependencies.
@@ -50,7 +50,7 @@ class ModelWrapper:
         num_workers: int = 1,
     ) -> None:
         """
-        Initializes the ModelWrapper.
+        Initializes the Galerna instance.
 
         Parameters
         ----------

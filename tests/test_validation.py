@@ -1,5 +1,5 @@
 import os
-from model_wrappers import ModelWrapper
+from galerna import Galerna
 
 def test_templates_dir_existence():
     non_existent_dir = "non_existent_templates_dir"
@@ -7,26 +7,21 @@ def test_templates_dir_existence():
         if os.path.isdir(non_existent_dir):
             os.rmdir(non_existent_dir)
         else:
-            os.remove(non_existent_dir)
+            os.remove(templates_dir)
     
     variable_parameters = {"param1": [1]}
     fixed_parameters = {}
     output_dir = "test_output"
     
-    # Verify that FileNotFoundError is raised
-    error_caught = False
-    try:
-        wrapper = ModelWrapper(
-            templates_dir=non_existent_dir,
-            variable_parameters=variable_parameters,
-            fixed_parameters=fixed_parameters,
-            output_dir=output_dir
+    # Verify that OSError is raised with pytest.raises
+    with pytest.raises(OSError, match=f"Templates directory '{templates_dir}' doesn't exist."):
+        Galerna(
+            templates_dir=templates_dir,
+            output_dir=output_dir,
+            variable_parameters=variable_parameters, # Added back
+            fixed_parameters=fixed_parameters,       # Added back
+            cases_name_format="case_{param1}"        # Added, assuming a simple format
         )
-    except FileNotFoundError as e:
-        print(f"Caught expected error: {e}")
-        assert non_existent_dir in str(e)
-        error_caught = True
-    
     if not error_caught:
         raise AssertionError("Should have raised FileNotFoundError")
         

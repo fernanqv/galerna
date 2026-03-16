@@ -4,11 +4,11 @@ import importlib.util
 import os
 import sys
 from typing import Type
-from model_wrappers.base import ModelWrapper
+from galerna.base import Galerna
 
-def load_custom_wrapper(file_path: str, class_name: str = "CustomModelWrapper") -> Type[ModelWrapper]:
+def load_custom_wrapper(file_path: str, class_name: str = "CustomGalerna") -> Type[Galerna]:
     """
-    Dynamically loads a ModelWrapper subclass from a .py file.
+    Dynamically loads a Galerna subclass from a .py file.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Custom wrapper file not found: {file_path}")
@@ -21,13 +21,13 @@ def load_custom_wrapper(file_path: str, class_name: str = "CustomModelWrapper") 
     sys.modules["custom_wrapper"] = module
     spec.loader.exec_module(module)
     
-    # Try to find a subclass of ModelWrapper if class_name is default
-    if class_name == "CustomModelWrapper":
+    # Try to find a subclass of Galerna if class_name is default
+    if class_name == "CustomGalerna":
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
             if (isinstance(attr, type) and 
-                issubclass(attr, ModelWrapper) and 
-                attr is not ModelWrapper):
+                issubclass(attr, Galerna) and 
+                attr is not Galerna):
                 return attr
     
     try:
@@ -48,13 +48,13 @@ def main():
     
     # Extract wrapper configuration
     wrapper_code_path = config.get("wrapper_code")
-    wrapper_class_name = config.get("wrapper_class", "CustomModelWrapper")
+    wrapper_class_name = config.get("wrapper_class", "CustomGalerna")
     
     if wrapper_code_path:
         print(f"Loading custom wrapper from {wrapper_code_path}...")
         WrapperClass = load_custom_wrapper(wrapper_code_path, wrapper_class_name)
     else:
-        WrapperClass = ModelWrapper
+        WrapperClass = Galerna
         
     # Instantiate the wrapper
     # Remove CLI-specific keys from config to pass as kwargs

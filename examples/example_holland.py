@@ -1,4 +1,4 @@
-from model_wrappers import ModelWrapper
+from galerna import Galerna
 import os
 
 # Define template and output directories
@@ -15,9 +15,9 @@ variable_parameters = {
 # Fixed parameters (empty in this case)
 fixed_parameters = {"var_fixed": 0}
 
-# Create a simple child class (although ModelWrapper is no longer abstract,
+# Create a simple child class (although Galerna is no longer abstract,
 # it is common to inherit to define specific behaviors if needed)
-class HollandWrapper(ModelWrapper):
+class HollandWrapper(Galerna):
     # available_launchers = {
     #     "serial": "swash_serial.exe",
     #     "mpi": "mpirun -np 2 swash_mpi.exe",
@@ -51,4 +51,5 @@ df_context = wrapper.get_context()
 wrapper.run_cases(launcher="echo 'hello'")
 wrapper.monitor_cases()
 #wrapper.run_cases_in_background(launcher="sleep 100 && echo 'hello'", detached=True, num_workers=2)
-#wrapper.run_cases(launcher="sbatch /nfs/home/geocean/valvanuz/model_wrappers/examples/launchers/slurm_xbeach.sh")
+#wrapper.run_cases(launcher="sbatch /nfs/home/geocean/valvanuz/galerna/examples/launchers/slurm_xbeach.sh")
+from galerna.execution import exec_bash_command, parallel_execute

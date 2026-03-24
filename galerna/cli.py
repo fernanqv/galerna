@@ -1,5 +1,5 @@
 import argparse
-import json
+import yaml
 import importlib.util
 import os
 import sys
@@ -38,13 +38,13 @@ def load_custom_wrapper(file_path: str, class_name: str = "CustomGalerna") -> Ty
 def main():
     parser = argparse.ArgumentParser(description="CLI for building and running model wrappers.")
     parser.add_argument("action", choices=["build", "run", "both"], help="Action to perform.")
-    parser.add_argument("--config", required=True, help="Path to the JSON configuration file.")
+    parser.add_argument("--config", required=True, help="Path to the YAML configuration file.")
     parser.add_argument("--launcher", help="Override the launcher command.")
     
     args = parser.parse_args()
     
     with open(args.config, 'r') as f:
-        config = json.load(f)
+        config = yaml.safe_load(f)
     
     # Extract wrapper configuration
     wrapper_code_path = config.get("wrapper_code")
@@ -71,7 +71,7 @@ def main():
     if args.action in ["run", "both"]:
         launcher = args.launcher or config.get("launcher")
         if not launcher:
-            print("Error: Launcher not specified in CLI or config JSON.")
+            print("Error: Launcher not specified in CLI or config YAML.")
             sys.exit(1)
         print(f"Running cases with launcher: {launcher}")
         wrapper.run_cases(launcher=launcher)

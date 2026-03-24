@@ -60,6 +60,30 @@ launcher_cmd = "sbatch /path/to/your/launcher.sh"
 wrapper.run_cases(launcher=launcher_cmd)
 ```
 
+### Example: Using the CLI
+
+You can also run Galerna via the command line interface using a YAML configuration file.
+
+1. Create a `config.yaml` file:
+
+```yaml
+wrapper_code: examples/example_holland.py
+wrapper_class: HollandWrapper
+templates_dir: templates/xbeach_holland_default
+output_dir: xbeach_holland_exp
+variable_parameters:
+  var1: [225, 226, 227]
+  var2: [514, 315, 316]
+fixed_parameters: {}
+mode: all_combinations
+launcher: sbatch /path/to/your/launcher.sh
+```
+
+2. Run the CLI:
+```bash
+galerna both --config config.yaml
+```
+
 ### Advanced Usage
 
 #### Inspecting Case Parameters

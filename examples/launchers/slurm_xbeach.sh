@@ -11,4 +11,4 @@ ROOT=/software/geocean/xbeach/slurm_netcdf_mpi
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$ROOT/lib
 export PATH=$ROOT/bin:$PATH
 
-/software/geocean/xbeach/with-netcdf/bin/xbeach 
+srun /software/geocean/xbeach/with-netcdf/bin/xbeach 

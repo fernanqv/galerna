@@ -37,7 +37,7 @@ def load_custom_wrapper(file_path: str, class_name: str = "CustomGalerna") -> Ty
 
 def main():
     parser = argparse.ArgumentParser(description="CLI for building and running model wrappers.")
-    parser.add_argument("action", choices=["build", "run", "both"], help="Action to perform.")
+    parser.add_argument("action", choices=["build", "run", "postprocess", "all"], help="Action to perform.")
     parser.add_argument("--config", required=True, help="Path to the YAML configuration file.")
     parser.add_argument("--launcher", help="Override the launcher command.")
     
@@ -64,17 +64,21 @@ def main():
         
     wrapper = WrapperClass(**wrapper_params)
     
-    if args.action in ["build", "both"]:
+    if args.action in ["build", "all"]:
         print("Building cases...")
         wrapper.build_cases()
         
-    if args.action in ["run", "both"]:
+    if args.action in ["run", "all"]:
         launcher = args.launcher or config.get("launcher")
         if not launcher:
             print("Error: Launcher not specified in CLI or config YAML.")
             sys.exit(1)
         print(f"Running cases with launcher: {launcher}")
         wrapper.run_cases(launcher=launcher)
+
+    if args.action in ["postprocess", "all"]:
+        print("Postprocessing cases...")
+        wrapper.postprocess_cases()
 
 if __name__ == "__main__":
     main()

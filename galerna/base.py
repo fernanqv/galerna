@@ -25,8 +25,8 @@ class Galerna:
     ----------
     templates_dir : str
         The directory where the templates are searched.
-    variable_parameters : dict
-        The parameters to be used for all cases.
+    variable_parameters : dict or str
+        The parameters to be used for all cases, or a path to a YAML file containing them.
     fixed_parameters : dict
         The fixed parameters for the cases.
     output_dir : str
@@ -38,7 +38,7 @@ class Galerna:
     def __init__(
         self,
         templates_dir: Optional[str],
-        variable_parameters: dict,
+        variable_parameters: Union[dict, str],
         fixed_parameters: dict,
         output_dir: str,
         templates_name: Union[List[str], str] = "all",
@@ -56,8 +56,8 @@ class Galerna:
         ----------
         templates_dir : str, optional
             The directory where the templates are searched.
-        variable_parameters : dict
-            The parameters to be used for all cases.
+        variable_parameters : dict or str
+            The parameters to be used for all cases, or a path to a YAML file containing them.
         fixed_parameters : dict
             The fixed parameters for the cases.
         output_dir : str
@@ -90,7 +90,14 @@ class Galerna:
         )
         
         self.templates_dir = templates_dir
-        self.variable_parameters = variable_parameters
+        if isinstance(variable_parameters, str):
+            import yaml
+            if not os.path.isfile(variable_parameters):
+                raise FileNotFoundError(f"variable_parameters file not found: {variable_parameters}")
+            with open(variable_parameters, "r") as f:
+                self.variable_parameters = yaml.safe_load(f)
+        else:
+            self.variable_parameters = variable_parameters
         self.fixed_parameters = fixed_parameters
         self.output_dir = output_dir
         self.cases_name_format = cases_name_format

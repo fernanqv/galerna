@@ -1,6 +1,7 @@
 import os
 from typing import List, Any
 from galerna.base import Galerna
+import xarray as xr
 
 
 class XbeachWrapper(Galerna):
@@ -11,7 +12,8 @@ class XbeachWrapper(Galerna):
     """
 
     available_launchers = {
-        "default": "xbeach.exe"
+        "default": "xbeach.exe",
+        "sci_unican": "/software/geocean/xbeach/launchXbeach.sh"
     }
 
     def postprocess_case(self, case_context: dict, **kwargs) -> Any:
@@ -22,51 +24,18 @@ class XbeachWrapper(Galerna):
         if not case_dir:
             return None
             
-        fit_log_path = os.path.join(case_dir, "fit.log")
+        ncpath = os.path.join(case_dir, "xboutput.nc")
         
-        if not os.path.isfile(fit_log_path):
-            self.logger.warning(f"File not found: {fit_log_path}")
+        if not os.path.isfile(ncpath):
+            self.logger.warning(f"File not found: {ncpath}")
             return None
             
         try:
-            with open(fit_log_path, "r") as f:
-                lines = f.readlines()
-                if lines:
-                    last_line = lines[-1].strip()
-                    self.logger.debug(f"Last line read from {fit_log_path}: {last_line}")
-                    return last_line
-                return None
-        except Exception as e:
-            self.logger.error(f"Error reading {fit_log_path}: {e}")
-            return None
-
-    def postprocess_cases(
-        self,
-        cases: List[int] = None,
-        clean_after: bool = False,
-        overwrite: bool = False,
-        **kwargs,
-    ) -> List[Any]:
-        """
-        Executes postprocess_case for each case and returns a list
-        containing the output of each case.
-        """
-        if cases is not None:
-            contexts_to_build = [self.cases_context[i] for i in cases]
-        else:
-            contexts_to_build = self.cases_context
-
-        self.logger.info(f"Postprocessing {len(contexts_to_build)} cases...")
-        results = []
+            ds_db = xr.open_dataset(ncpath)        
+            x_db = ds_db['globalx'].values.flatten()        
+            return(x_db)
         
-        for context in contexts_to_build:
-            # Capture the result of each case
-            result = self.postprocess_case(
-                case_context=context, 
-                overwrite=overwrite, 
-                clean_after=clean_after, 
-                **kwargs
-            )
-            results.append(result)
-            
-        return results
+        except Exception as e:
+                self.logger.error(f"Error reading {ncpath}: {e}")
+                return None 
+

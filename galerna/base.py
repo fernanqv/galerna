@@ -506,5 +506,10 @@ class Galerna:
             contexts_to_build = self.cases_context
 
         self.logger.debug(f"Starting to build {len(contexts_to_build)} cases.")
+
+        postprocessed_files = []
         for context in contexts_to_build:
-            self.postprocess_case(context, overwrite=overwrite, clean_after=clean_after, **kwargs)
+            postprocessed_file = self.postprocess_case(context, overwrite=overwrite, clean_after=clean_after, **kwargs)
+            postprocessed_files.append(postprocessed_file)
+        return postprocessed_files
+

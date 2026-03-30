@@ -46,9 +46,12 @@ print(df_context)
 
 #wrapper.build_cases(cases=[0, 1, 2])
 wrapper.build_cases()
-
-df_context = wrapper.get_context()
 wrapper.run_cases()
+
+data=wrapper.postprocess_cases(cases=[0])
+print(data)
+
+
 
 #wrapper.run_cases_in_background(launcher="sleep 100 && echo 'hello'", detached=True, num_workers=2)
 #wrapper.run_cases(launcher="sbatch /nfs/home/geocean/valvanuz/galerna/examples/launchers/slurm_xbeach.sh")

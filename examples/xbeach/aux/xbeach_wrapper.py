@@ -2,12 +2,17 @@ import os
 from typing import List, Any
 from galerna.base import Galerna
 
-class FitPostprocessWrapper(Galerna):
+
+class XbeachWrapper(Galerna):
     """
     Custom class that inherits from Galerna.
     Overrides postprocess_case to read the last line of fit.log
     and postprocess_cases to accumulate and return the results.
     """
+
+    available_launchers = {
+        "default": "xbeach.exe"
+    }
 
     def postprocess_case(self, case_context: dict, **kwargs) -> Any:
         """

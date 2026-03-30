@@ -40,7 +40,11 @@ fixed_parameters = {}
 
 # 4. Create a custom wrapper class
 class HollandWrapper(Galerna):
-    pass
+    # Available launchers for this wrapper
+    available_launchers = {
+        "default": "sbatch /path/to/your/launcher.sh",
+        "local": "bash /path/to/your/local_launcher.sh"
+    }
 
 # 5. Instantiate the wrapper
 wrapper = HollandWrapper(
@@ -55,9 +59,10 @@ wrapper = HollandWrapper(
 # The mode defined in __init__ will be used by default
 wrapper.build_cases()
 
-# 7. Run cases using a launcher command (optional)
-launcher_cmd = "sbatch /path/to/your/launcher.sh"
-wrapper.run_cases(launcher=launcher_cmd)
+# 7. Run cases (optional)
+# Uses the 'default' launcher from available_launchers.
+# "launcher" can also be explicitly set in variable_parameters or fixed_parameters.
+wrapper.run_cases()
 ```
 
 ### Example: Using the CLI
@@ -74,14 +79,27 @@ output_dir: xbeach_holland_exp
 variable_parameters:
   var1: [225, 226, 227]
   var2: [514, 315, 316]
-fixed_parameters: {}
+fixed_parameters:
+  launcher: sbatch /path/to/your/launcher.sh
 mode: all_combinations
-launcher: sbatch /path/to/your/launcher.sh
 ```
 
 2. Run the CLI:
 ```bash
-galerna both --config config.yaml
+galerna all --config config.yaml
+```
+
+3. Run the CLI for specific cases:
+You can use the `--cases` argument to specify a subset of cases to process using comma-separated numbers or ranges:
+```bash
+# Build only cases 0, 1, and 2
+galerna build --config config.yaml --cases 0-2
+
+# Run only cases 1, 3, and 5
+galerna run --config config.yaml --cases 1,3,5
+
+# Both comma-separated lists and ranges are supported
+galerna all --config config.yaml --cases 0,2,5-7
 ```
 
 ### Advanced Usage

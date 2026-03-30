@@ -1,0 +1,15 @@
+wrapper_code: aux/xbeach_wrapper.py
+wrapper_class: XbeachWrapper
+templates_dir: holland_template
+output_dir: holland_output
+variable_parameters:
+  var1:
+    - 225
+    - 226
+  var2:
+    - 514
+    - 315
+fixed_parameters: {}
+cases_name_format: holland_{var1:04}_{var2:04}
+mode: all_combinations
+#num_workers: 1

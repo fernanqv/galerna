@@ -33,7 +33,8 @@ wrapper = XbeachWrapper(
     variable_parameters=variable_parameters,
     fixed_parameters=fixed_parameters,
     output_dir=output_dir,
-    #cases_name_format="holland_{var1:04}_{var2:04}",
+    #cases_name_format="holland_{{ var1 }}_{{ var2 }}",
+    custom_launcher="echo 'Running var1={{var1}}' && pwd",
     log_level="DEBUG",
 #    log_file="holland.log",
     mode="all_combinations"
@@ -46,7 +47,7 @@ print(df_context)
 
 #wrapper.build_cases(cases=[0, 1, 2])
 wrapper.build_cases()
-wrapper.run_cases()
+wrapper.run_cases(cases=[0, 1])
 
 data=wrapper.postprocess_cases(cases=[0])
 print(data)

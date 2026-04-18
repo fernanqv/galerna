@@ -13,15 +13,19 @@ def test_templates_dir_existence():
     fixed_parameters = {}
     output_dir = "test_output"
     
-    # Verify that OSError is raised with pytest.raises
-    with pytest.raises(OSError, match=f"Templates directory '{templates_dir}' doesn't exist."):
+    error_caught = False
+    try:
         Galerna(
-            templates_dir=templates_dir,
+            templates_dir=non_existent_dir,
             output_dir=output_dir,
-            variable_parameters=variable_parameters, # Added back
-            fixed_parameters=fixed_parameters,       # Added back
-            cases_name_format="case_{param1}"        # Added, assuming a simple format
+            variable_parameters=variable_parameters,
+            fixed_parameters=fixed_parameters,
+            cases_name_format="case_{{param1}}"
         )
+    except FileNotFoundError:
+        error_caught = True
+        print(f"Validation successful! Caught expected FileNotFoundError")
+        
     if not error_caught:
         raise AssertionError("Should have raised FileNotFoundError")
         

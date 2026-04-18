@@ -8,7 +8,7 @@ variable_parameters:
     - 514
     - 315
 fixed_parameters: {}
-cases_name_format: holland_{var1:04}_{var2:04}
+cases_name_format: "holland_{{ var1 }}_{{ var2 }}"
 mode: all_combinations
-launcher: "pwd; sleep 10"
+custom_launcher: "pwd; sleep 10; echo 'Using custom launcher with {{ var1 }}'"
 #num_workers: 1

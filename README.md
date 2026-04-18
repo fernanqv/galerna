@@ -61,7 +61,7 @@ wrapper.build_cases()
 
 # 7. Run cases (optional)
 # Uses the 'default' launcher from available_launchers.
-# "launcher" can also be explicitly set in variable_parameters or fixed_parameters.
+# You can override the execution passing: launcher="alias" or custom_launcher="mpirun -np {{np}} model"
 wrapper.run_cases()
 ```
 
@@ -79,8 +79,8 @@ output_dir: xbeach_holland_exp
 variable_parameters:
   var1: [225, 226, 227]
   var2: [514, 315, 316]
-fixed_parameters:
-  launcher: sbatch /path/to/your/launcher.sh
+fixed_parameters: {}
+custom_launcher: sbatch /path/to/your/launcher.sh
 mode: all_combinations
 ```
 
@@ -125,12 +125,12 @@ wrapper.build_cases(cases=[0, 5])
 #### Custom Case Naming
 You can customize how the case directories are named. This can be defined at the instance level (recommended) or overridden in `build_cases()`. It supports both string templates and functions.
 
-**Option A: String Template (Recommended)**
-Use standard Python format strings. Any variable parameter name or `case_num` can be used.
+**Option A: Jinja2 String Template (Recommended)**
+Use standard Jinja2 format strings. Any variable parameter name or `case_num` can be used.
 ```python
 wrapper = HollandWrapper(
     ...,
-    cases_name_format="case_{var1:04}_{var2:04}"
+    cases_name_format="case_{{ '%04d' | format(var1) }}_{{ '%04d' | format(var2) }}"
 )
 ```
 
@@ -143,6 +143,30 @@ def my_custom_naming(ctx):
 
 wrapper.build_cases(cases_name_format=my_custom_naming)
 ```
+
+#### Dynamic Jinja2 Launchers
+You can run cases dynamically with commands that adjust depending on the model configuration. The `custom_launcher` property supports evaluating any variable using Jinja2 syntax before dispatching the execution:
+
+```yaml
+# config.yaml example
+templates_dir: templates
+output_dir: exp_results_dynamic
+mode: all_combinations
+
+# The cases_name_format must include the combinatorics variables so folders do not overwrite each other
+cases_name_format: "case-{{model_version}}_{{compilation}}_{{np}}cpus"
+
+# The command is built securely checking variables available from the context
+custom_launcher: "mpirun -np {{np}} model.{{model_version}}_{{compilation}}"
+
+variable_parameters:
+  compilation: ["gfortran", "ifort"]
+  np: [1, 2, 4]
+fixed_parameters:
+  model_version: "4.1"
+```
+
+In this setup, each generated case will dispatch its corresponding isolated script execution, e.g., `mpirun -np 4 model.4.1_gfortran` running directly inside `case-4.1_gfortran_4cpus`.
 
 ## Creating Custom Wrapper Classes
 
@@ -384,9 +408,9 @@ for i, result in enumerate(results):
 
 ## Key Features
 
-- **Jinja2 Templating**: Easily inject parameters into model input files.
+- **Jinja2 Templating**: Easily inject parameters into model input files and execution commands (launchers).
 - **Flexible selective building**: Build only the cases you need with `wrapper.build_cases(cases=[0, 5])`.
-- **Custom directory naming**: Support for string templates (e.g., `"{var1}_{case_num}"`) or functions.
+- **Custom directory naming**: Support for Jinja2 string templates (e.g., `"{var1}_{case_num}"`) or functions.
 - **Easy context access**: Use `wrapper.get_context()` to see all case parameters and their absolute directory paths.
 - **Template validation**: Automatic check for `templates_dir` existence during initialization.
-- **Launcher Support**: Seamless integration with Slurm or local shell scripts.
+- **Launcher Support**: Seamless integration with Slurm or local shell scripts via standard aliases or Jinja-rendered commands.

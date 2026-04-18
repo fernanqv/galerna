@@ -18,7 +18,9 @@ def test_context_and_build():
         templates_dir=None,
         variable_parameters=variable_parameters,
         fixed_parameters=fixed_parameters,
-        output_dir=output_dir
+        output_dir=output_dir,
+        mode="all_combinations",
+        cases_name_format="p1_{{param1}}_p2_{{param2}}"
     )
 
     # Test load_cases and get_context
@@ -28,8 +30,8 @@ def test_context_and_build():
     print(f"Context content:\n{ctx}")
 
     # Test build_cases with subset and string format
-    print("\nTesting build_cases with subset [0] and string format...")
-    wrapper.build_cases(mode="all_combinations", cases=[0], cases_name_format="p1_{param1}_p2_{param2}")
+    print("\nTesting build_cases with subset [0]...")
+    wrapper.build_cases(cases=[0])
     
     built_dirs = os.listdir(output_dir)
     print(f"Built directories: {built_dirs}")
@@ -37,8 +39,10 @@ def test_context_and_build():
     
     # Test instance level naming
     print("\nTesting instance level naming...")
-    wrapper.cases_name_format = "instance_{case_num}"
-    wrapper.build_cases(mode="all_combinations", cases=[1])
+    wrapper.cases_name_format = "instance_{{case_num}}"
+    # Regenerate context to apply the new format
+    wrapper._generate_cases_context()
+    wrapper.build_cases(cases=[1])
     built_dirs = os.listdir(output_dir)
     print(f"Built directories: {built_dirs}")
     assert "instance_1" in built_dirs

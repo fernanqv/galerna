@@ -42,12 +42,16 @@ class Galerna:
         fixed_parameters: dict,
         output_dir: str,
         templates_name: Union[List[str], str] = "all",
-        cases_name_format: Union[str, Callable] = "{case_num:04}",
+        cases_name_format: Union[str, Callable] = '{{ "%04d" | format(case_num) }}',
         mode: str = "one_by_one",
         log_level: str = "INFO",
         log_file: Optional[str] = None,
         log_console: Optional[bool] = None,
         num_workers: int = 1,
+        launcher: str = "default",
+        custom_launcher: Optional[str] = None,
+        launcher_bulk: str = "bulk_default",
+        custom_launcher_bulk: Optional[str] = None,
     ) -> None:
         """
         Initializes the Galerna instance.
@@ -65,7 +69,7 @@ class Galerna:
         templates_name : Union[List[str], str], optional
             The names of the templates to use. Default is "all".
         cases_name_format : Union[str, Callable], optional
-            The format for naming case directories. Default is "{case_num:04}".
+            The format for naming case directories (Jinja2 format). Default is '{{ "%04d" | format(case_num) }}'.
         mode : str, optional
             The mode to load the cases. Can be "all_combinations" or "one_by_one".
             Default is "one_by_one".
@@ -78,6 +82,14 @@ class Galerna:
             If None, it defaults to True if log_file is None, and False otherwise.
         num_workers : int, optional
             The number of workers to use for parallel execution. Default is 1.
+        launcher : str, optional
+            Alias for the launcher command to be picked from available_launchers. Default is "default".
+        custom_launcher : str, optional
+            Arbitrary bash command string rendered with Jinja2 per case. Overrides launcher.
+        launcher_bulk : str, optional
+            Alias for bulk launcher from available_launchers. Default is "bulk_default".
+        custom_launcher_bulk : str, optional
+            Arbitrary bulk bash command rendered with Jinja2. Overrides launcher_bulk.
         """
         if log_console is None:
             log_console = log_file is None
@@ -103,6 +115,10 @@ class Galerna:
         self.cases_name_format = cases_name_format
         self.mode = mode
         self.num_workers = num_workers
+        self.launcher = launcher
+        self.custom_launcher = custom_launcher
+        self.launcher_bulk = launcher_bulk
+        self.custom_launcher_bulk = custom_launcher_bulk
 
         if self.templates_dir is not None:
             if not os.path.isdir(self.templates_dir):
@@ -147,7 +163,11 @@ class Galerna:
             
             # Calculate case directory
             if isinstance(self.cases_name_format, str):
-                name = self.cases_name_format.format(**context)
+                if self.env:
+                    name = self.env.from_string(self.cases_name_format).render(context)
+                else:
+                    from jinja2 import Template
+                    name = Template(self.cases_name_format).render(context)
             else:
                 name = self.cases_name_format(context)
             context["case_dir"] = op.abspath(op.join(self.output_dir, name))
@@ -267,24 +287,31 @@ class Galerna:
         """
 
         context = self.cases_context[case_num]
-        actual_launcher = context.get("launcher") or self.available_launchers.get("default")
+        
+        if getattr(self, "custom_launcher", None):
+            launcher_str = self.custom_launcher
+        else:
+            if self.launcher not in self.available_launchers:
+                raise ValueError(
+                    f"Launcher alias '{self.launcher}' not found in available_launchers. "
+                    "If you want to use an arbitrary command, use 'custom_launcher'."
+                )
+            launcher_str = self.available_launchers[self.launcher]
 
-        if not actual_launcher:
-            raise ValueError(
-                "Launcher must be specified in variable_parameters, fixed_parameters, "
-                "or defined as 'default' in available_launchers."
-            )
-
-        # Get launcher command from the available launchers if it is an alias
-        launcher = self.available_launchers.get(actual_launcher, actual_launcher)
+        if self.env:
+            launcher_cmd = self.env.from_string(launcher_str).render(context)
+        else:
+            from jinja2 import Template
+            launcher_cmd = Template(launcher_str).render(context)
+            
         case_dir = self.cases_dirs[case_num]
 
         # Run the case in the case directory
-        self.logger.info(f"Running case {case_num} in {case_dir} with launcher={launcher}.")
+        self.logger.info(f"Running case {case_num} in {case_dir} with launcher={launcher_cmd}.")
         output_log_file = op.join(case_dir, output_log_file)
 
         exec_bash_command(
-            cmd=launcher,
+            cmd=launcher_cmd,
             cwd=case_dir,
             log_output=True,
             logger=self.logger,
@@ -292,7 +319,7 @@ class Galerna:
 
     def run_cases(
         self,
-        cases_to_run: List[int] = None,
+        cases: List[int] = None,
         num_workers: int = None,
     ) -> None:
         """
@@ -302,7 +329,7 @@ class Galerna:
 
         Parameters
         ----------
-        cases_to_run : List[int], optional
+        cases : List[int], optional
             The list with the cases to run. Default is None.
         num_workers : int, optional
             The number of parallel workers. Default is None.
@@ -316,13 +343,13 @@ class Galerna:
         if num_workers is None:
             num_workers = self.num_workers
 
-        if cases_to_run is not None:
+        if cases is not None:
             self.logger.warning(
-                f"Cases to run was specified, so just {cases_to_run} will be run."
+                f"Cases to run was specified, so just {cases} will be run."
             )
-            cases_to_run_list = cases_to_run
+            cases_list = cases
         else:
-            cases_to_run_list = list(range(len(self.cases_dirs)))
+            cases_list = list(range(len(self.cases_dirs)))
 
         if num_workers > 1:
             self.logger.debug(
@@ -330,13 +357,13 @@ class Galerna:
             )
             _results = parallel_execute(
                 func=self.run_case,
-                items=cases_to_run_list,
+                items=cases_list,
                 num_workers=num_workers,
                 logger=self.logger,
             )
         else:
             self.logger.debug(f"Running cases sequentially.")
-            for case_num in cases_to_run_list:
+            for case_num in cases_list:
                 try:
                     self.run_case(
                         case_num=case_num,
@@ -350,7 +377,7 @@ class Galerna:
 
     def _run_cases_with_status(
         self,
-        cases_to_run: List[int],
+        cases: List[int],
         num_workers: int,
         status_queue: queue.Queue,
     ) -> None:
@@ -359,7 +386,7 @@ class Galerna:
 
         Parameters
         ----------
-        cases_to_run : List[int]
+        cases : List[int]
             The list with the cases to run.
         num_workers : int
             The number of parallel workers.
@@ -368,14 +395,14 @@ class Galerna:
         """
 
         try:
-            self.run_cases(cases_to_run, num_workers)
+            self.run_cases(cases, num_workers)
             status_queue.put("Completed")
         except Exception as e:
             status_queue.put(f"Error: {e}")
 
     def run_cases_in_background(
         self,
-        cases_to_run: List[int] = None,
+        cases: List[int] = None,
         num_workers: int = None,
         detached: bool = False,
     ) -> None:
@@ -386,7 +413,7 @@ class Galerna:
 
         Parameters
         ----------
-        cases_to_run : List[int], optional
+        cases : List[int], optional
             The list with the cases to run. Default is None.
         num_workers : int, optional
             The number of parallel workers. Default is None.
@@ -401,13 +428,13 @@ class Galerna:
         if detached:
             from .execution import run_detached
             self.logger.info("Running cases in a fully detached background process.")
-            run_detached(self.run_cases, cases_to_run, num_workers)
+            run_detached(self.run_cases, cases, num_workers)
         else:
             if not hasattr(self, "status_queue") or self.status_queue is None:
                 self.status_queue = queue.Queue()
             self.thread = threading.Thread(
                 target=self._run_cases_with_status,
-                args=(cases_to_run, num_workers, self.status_queue),
+                args=(cases, num_workers, self.status_queue),
             )
             self.thread.start()
 
@@ -454,19 +481,31 @@ class Galerna:
         >>> wrapper.run_cases_bulk(launcher="my_launcher.sh", path_to_execute="/my/path/to/execute")
         """
 
-        if not launcher:
-            launcher = self.available_launchers.get("default")
-            if not launcher:
-                raise ValueError("Launcher must be specified or defined as 'default' in available_launchers.")
+        if launcher is not None:
+             launcher_str = self.available_launchers.get(launcher, launcher) 
+        elif getattr(self, "custom_launcher_bulk", None):
+             launcher_str = self.custom_launcher_bulk
+        else:
+             if getattr(self, "launcher_bulk", None) in self.available_launchers:
+                 launcher_str = self.available_launchers[self.launcher_bulk]
+             elif "default" in self.available_launchers:
+                 launcher_str = self.available_launchers["default"]
+             else:
+                 raise ValueError(
+                     "Could not find a valid bulk launcher alias. Define 'launcher_bulk' or 'custom_launcher_bulk'."
+                 )
 
-        # Get launcher command from the available launchers if it is an alias
-        launcher = self.available_launchers.get(launcher, launcher)
+        if self.env:
+            launcher_cmd = self.env.from_string(launcher_str).render(self.fixed_parameters)
+        else:
+            from jinja2 import Template
+            launcher_cmd = Template(launcher_str).render(self.fixed_parameters)
                 
         if path_to_execute is None:
             path_to_execute = self.output_dir
 
-        self.logger.info(f"Running cases with launcher={launcher} in {path_to_execute}")
-        exec_bash_command(cmd=launcher, cwd=path_to_execute, logger=self.logger)
+        self.logger.info(f"Running cases with launcher={launcher_cmd} in {path_to_execute}")
+        exec_bash_command(cmd=launcher_cmd, cwd=path_to_execute, logger=self.logger)
 
 
     def postprocess_case(self, **kwargs) -> None:

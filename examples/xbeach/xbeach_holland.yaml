@@ -9,7 +9,12 @@ variable_parameters:
   var2:
     - 514
     - 315
+  np:
+    - 1
+    - 2
+    
 fixed_parameters: {}
-cases_name_format: holland_{var1:04}_{var2:04}
+cases_name_format: "holland_{{ var1 }}_{{ var2 }}_{{np}}"
 mode: all_combinations
+custom_launcher: "echo {{np}}"
 #num_workers: 1

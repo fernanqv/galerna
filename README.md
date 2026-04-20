@@ -1,8 +1,14 @@
-# Model Wrappers
-
-**This project is a minimal fork of [BlueMath_tk](https://github.com/GeoOcean/BlueMath_tk).**
+# Galerna
 
 Minimal infrastructure for managing and running numerical model cases. This project provides a base `Galerna` class to handle templating, parameter management, and parallel execution of numerical models.
+
+## Acknowledgments
+Project EasyFlood: Emulating Automatically SYstems of coastal FLOODing project EasyFlood (PID2023-
+150689OB-I00) financed by MCIN/AEI/10.13039/501100011033/ ERDF, EU.
+
+
+<img width="30%" alt="image" src="https://github.com/user-attachments/assets/ec34ff25-15b9-4d0d-b061-5f62e4241d8f" />
+
 
 ## Installation
 
@@ -414,3 +420,5 @@ for i, result in enumerate(results):
 - **Easy context access**: Use `wrapper.get_context()` to see all case parameters and their absolute directory paths.
 - **Template validation**: Automatic check for `templates_dir` existence during initialization.
 - **Launcher Support**: Seamless integration with Slurm or local shell scripts via standard aliases or Jinja-rendered commands.
+
+**This project is a minimal fork of [BlueMath_tk](https://github.com/GeoOcean/BlueMath_tk).**

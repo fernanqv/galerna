@@ -1,16 +1,11 @@
-import copy
-import io
 import itertools
 import logging
+import math
 import os
 import os.path as op
-import subprocess
-import sys
 import json
 from typing import Any, Callable, Dict, List, Optional, Union
-
 from jinja2 import Environment, FileSystemLoader
-
 from .execution import exec_bash_command
 from .utils import copy_files, get_simple_logger      
 
@@ -48,7 +43,10 @@ class Galerna:
         log_console: Optional[bool] = None,
         command: str = None,
         launcher_bulk: Optional[str] = None,
-        save_context: bool = True,
+        sbatch_launcher: Optional[Union[bool, str]] = None,
+        tasks_per_node: int = 1,
+        max_workers: int = 1,
+        sbatch_template: Optional[str] = False,
     ) -> None:
         """
         Initializes the Galerna instance.
@@ -80,10 +78,15 @@ class Galerna:
         command : str
             Bash command string rendered with Jinja2 per case.
         launcher_bulk : str, optional
-            Bash command rendered with Jinja2 for bulk execution.
-        save_context : bool, optional
-            Whether to save the cases context as a JSON file in the output directory. Default is False 
-        """
+            Bash command rendered with Jinja2 for bulk execution.¡ 
+        tasks_per_node : int, optional
+            Number of commands processed by each SLURM_ARRAY_TASK_ID. Default is 1000
+        max_workers : int, optional
+            Number of concurrent jobs executed by parallel locally on each node. Default is 40.
+        sbatch_launcher : bool or str, optional
+            If True or a valid path to a template, generates a SLURM array script for
+             executing the cases in bulk on a cluster. Default is False."""
+        
         if log_console is None:
             log_console = log_file is None
 
@@ -113,8 +116,10 @@ class Galerna:
         self.cases_name_format = cases_name_format
         self.mode = mode
         self.command = command
-        self.save_context = save_context
         self.launcher_bulk = launcher_bulk
+        self.sbatch_launcher = sbatch_launcher
+        self.tasks_per_node = tasks_per_node
+        self.max_workers = max_workers
 
         if self.templates_dir is not None:
             if not os.path.isdir(self.templates_dir):
@@ -131,13 +136,12 @@ class Galerna:
         self.cases_context: List[dict] = []
         self._generate_cases_context()
     
-        if self.save_context:
-            import json
-            context_path = op.join(self.output_dir, "cases_context.json")
-            os.makedirs(self.output_dir, exist_ok=True)
-            with open(context_path, "w") as f:
-                json.dump(self.cases_context, f, indent=4)
-            self.logger.info(f"Cases context saved to {context_path}")
+        # Save the cases context to a JSON file in the output directory for reference
+        context_path = op.join(self.output_dir, "cases_context.json")
+        os.makedirs(self.output_dir, exist_ok=True)
+        with open(context_path, "w") as f:
+            json.dump(self.cases_context, f, indent=4)
+        self.logger.info(f"Cases context saved to {context_path}")
 
 
     def _generate_cases_context(self) -> None:
@@ -173,19 +177,19 @@ class Galerna:
             # Calculate case directory
             if isinstance(self.cases_name_format, str):
                 if self.env:
-                    name = self.env.from_string(self.cases_name_format).render(context)
+                    folder_name = self.env.from_string(self.cases_name_format).render(context)
                     command_cmd = self.env.from_string(self.command).render(context)
                 else:
                     from jinja2 import Template
-                    name = Template(self.cases_name_format).render(context)
+                    folder_name = Template(self.cases_name_format).render(context)
                     command_cmd = Template(self.command).render(context)
             else:
-                name = self.cases_name_format(context)
+                folder_name = self.cases_name_format(context)
 
             if self.templates_dir is None:
                 context["case_dir"] = op.abspath(self.output_dir)
             else:
-                context["case_dir"] = op.abspath(op.join(self.output_dir, name))
+                context["case_dir"] = op.abspath(op.join(self.output_dir, folder_name))
             
             context["command_cmd"] = command_cmd
 
@@ -248,7 +252,6 @@ class Galerna:
             The context (parameters) for this specific case.
         """
 
-        # If templates_dir is not defined, we create commands.txt with the rendered command for each case, instead of creating
         case_dir = case_context["case_dir"]
         self.logger.debug(f"Building case {case_context.get('case_num')} in {case_dir}")
         os.makedirs(case_dir, exist_ok=True)
@@ -276,33 +279,14 @@ class Galerna:
             A list of indices of the cases to build.
             If None, all loaded cases are built.
         """
-        
-        if cases is not None:
-            contexts_to_build = [self.cases_context[i] for i in cases]
-        else:
-            contexts_to_build = self.cases_context
 
+        if self.templates_dir is not None:        
+            if cases is not None:
+                contexts_to_build = [self.cases_context[i] for i in cases]
+            else:
+                contexts_to_build = self.cases_context
 
-        self.logger.debug(f"Starting to build {len(contexts_to_build)} cases.")
-        if self.templates_dir is None:
-            commands_file = op.join(self.output_dir, "commands.txt")
-
-            # Determine how to write each line in commands.txt
-            eval_str = getattr(self, "command", None)
-
-            from jinja2 import Template
-            with open(commands_file, "w") as f:
-                for ctx in contexts_to_build:
-                    if eval_str:
-                        if self.env:
-                            line = self.env.from_string(eval_str).render(ctx)
-                        else:
-                            line = Template(eval_str).render(ctx)
-                    else:
-                        line = json.dumps(ctx)
-                    f.write(line + "\n")
-                return
-        else: 
+            self.logger.debug(f"Starting to build {len(contexts_to_build)} cases.")
             for context in contexts_to_build:
                 self.build_case_and_render_files(context)
 
@@ -330,14 +314,15 @@ class Galerna:
         if not context["command_cmd"]:
             raise ValueError("command is not defined. Please set it in __init__.")
         
-        case_dir = self.cases_dirs[case_num]
+        case_dir = context["case_dir"]
+        command_cmd= context["command_cmd"]
 
         # Run the case in the case directory
-        self.logger.info(f"Running case {case_num} in {case_dir} with command={context.command_cmd}.")
+        self.logger.info(f"Running case {case_num} in {case_dir} with command={command_cmd}")
         output_log_file = op.join(case_dir, output_log_file)
 
         exec_bash_command(
-            cmd=context.command_cmd,
+            cmd=command_cmd,
             cwd=case_dir,
             log_output=True,
             logger=self.logger,
@@ -370,7 +355,7 @@ class Galerna:
         else:
             cases_list = list(range(len(self.cases_dirs)))
 
-        self.logger.debug(f"Running cases sequentially.")
+        self.logger.debug(f"Running cases.")
         for case_num in cases_list:
             try:
                 self.run_case(

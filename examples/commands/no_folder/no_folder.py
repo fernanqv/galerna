@@ -1,6 +1,7 @@
 import os
 from galerna.base import Galerna
-from galerna.bulk_array import BulkArrayRunner
+
+os.chdir('examples/commands/no_folder')
 
 def main():
     # We define the runner strictly using the Object Oriented approach 
@@ -11,7 +12,7 @@ def main():
         variable_parameters={"station": list(range(1, 16))},
         output_dir="output_array",
         mode="one_by_one",
-        command="python dummy_script.py {{station}}",
+        command="python ../../dummy_script.py {{station}}",
         #sbatch_template="/Users/valva/Library/CloudStorage/OneDrive-UNICAN/repos/galerna_old/examples/array_test/job_template.sh"
     )
     
@@ -20,7 +21,7 @@ def main():
     
     print("Done! You can submit the batch natively using slurm if inside a cluster.")
     # uncomment below to run:
-    # wrapper.run_cases()
+    wrapper.run_cases()
 
 if __name__ == "__main__":
     main()

@@ -7,6 +7,7 @@ from typing import List, Optional
 from galerna.base import Galerna
 from galerna.execution import exec_bash_command
 
+os.chdir('examples/array_test')
 
 class BulkArrayRunner(Galerna):
     """

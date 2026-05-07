@@ -1,8 +1,6 @@
 import os
 from galerna.base import Galerna
 
-os.chdir("examples/commands/empty_folder")
-
 def main():
     # We define the runner strictly using the Object Oriented approach 
     # instead of passing a YAML file and relying on the CLI.
@@ -10,9 +8,8 @@ def main():
         templates_dir="templates",
         variable_parameters={"station": list(range(1, 16))},
         output_dir="output_array",
-        command="python ../../../dummy_script.py {{station}}",
+        command="python dummy_script.py {{station}}",
         log_level="DEBUG",
-        #sbatch_template="/Users/valva/Library/CloudStorage/OneDrive-UNICAN/repos/galerna_old/examples/array_test/job_template.sh"
     )
     
     print("Building cases...")

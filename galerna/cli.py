@@ -52,7 +52,7 @@ def load_custom_wrapper(file_path: str, class_name: str = "CustomGalerna") -> Ty
 
 def main():
     parser = argparse.ArgumentParser(description="CLI for building and running model wrappers.")
-    parser.add_argument("action", choices=["build", "run", "monitor", "postprocess", "all"], help="Action to perform.")
+    parser.add_argument("action", choices=["build", "run", "status", "postprocess", "all"], help="Action to perform.")
     parser.add_argument("--config", required=True, help="Path to the YAML configuration file.")
     parser.add_argument("--cases", type=str, help="Comma-separated list of case indices or ranges (e.g., '1,2,5-7') to process.")
     
@@ -102,12 +102,13 @@ def main():
         print("Postprocessing cases...")
         wrapper.postprocess_cases(cases=cases_list)
         
-    if args.action in ["monitor", "all"]:
-        if hasattr(wrapper, "monitor_cases"):
-            print("Monitoring cases...")
-            wrapper.monitor_cases()
+    if args.action in ["status", "all"]:
+        if hasattr(wrapper, "status_cases"):
+            print("Checking status of cases...")
+            status_result = wrapper.status_cases(cases=cases_list)
+            print(status_result)
         else:
-            print("Monitor action not supported by this wrapper class.")
+            print("Status action not supported by this wrapper class.")
 
 if __name__ == "__main__":
     main()

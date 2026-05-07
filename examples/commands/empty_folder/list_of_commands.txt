@@ -1,0 +1,15 @@
+echo 0:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0000; python ../../../dummy_script.py 1
+echo 1:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0001; python ../../../dummy_script.py 2
+echo 2:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0002; python ../../../dummy_script.py 3
+echo 3:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0003; python ../../../dummy_script.py 4
+echo 4:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0004; python ../../../dummy_script.py 5
+echo 5:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0005; python ../../../dummy_script.py 6
+echo 6:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0006; python ../../../dummy_script.py 7
+echo 7:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0007; python ../../../dummy_script.py 8
+echo 8:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0008; python ../../../dummy_script.py 9
+echo 9:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0009; python ../../../dummy_script.py 10
+echo 10:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0010; python ../../../dummy_script.py 11
+echo 11:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0011; python ../../../dummy_script.py 12
+echo 12:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0012; python ../../../dummy_script.py 13
+echo 13:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0013; python ../../../dummy_script.py 14
+echo 14:; cd /nfs/home/gmeteo/valva/repos/galerna/examples/commands/empty_folder/output_array/0014; python ../../../dummy_script.py 15

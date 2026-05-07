@@ -56,6 +56,3 @@ print(data)
 
 
 
-#wrapper.run_cases_in_background(launcher="sleep 100 && echo 'hello'", detached=True, num_workers=2)
-#wrapper.run_cases(launcher="sbatch /nfs/home/geocean/valvanuz/galerna/examples/launchers/slurm_xbeach.sh")
-#from galerna.execution import exec_bash_command, parallel_execute

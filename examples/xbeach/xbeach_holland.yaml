@@ -12,8 +12,11 @@ variable_parameters:
   np:
     - 1
     - 2
+  compiler:
+    - gfortran
+    - ifort
     
 fixed_parameters: {}
 #cases_name_format: "holland_{{ var1 }}_{{ var2 }}_{{np}}"
 mode: all_combinations
-command: "echo 'Running var1={{var1}}, var2={{var2}}, np={{np}}' && pwd"
+command: "echo 'sbatch xbeach_{{compiler}}.sh np={{np}}' && pwd"

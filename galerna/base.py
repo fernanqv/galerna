@@ -6,8 +6,7 @@ import os.path as op
 import json
 from typing import Any, Callable, Dict, List, Optional, Union
 from jinja2 import Environment, FileSystemLoader
-from .execution import exec_bash_command
-from .utils import copy_files, get_simple_logger      
+from .utils import copy_files, get_simple_logger, exec_bash_command, create_command_line    
 
 
 class Galerna:
@@ -42,11 +41,6 @@ class Galerna:
         log_file: Optional[str] = None,
         log_console: Optional[bool] = None,
         command: str = None,
-        launcher_bulk: Optional[str] = None,
-        sbatch_launcher: Optional[Union[bool, str]] = None,
-        tasks_per_node: int = 1,
-        max_workers: int = 1,
-        sbatch_template: Optional[str] = False,
     ) -> None:
         """
         Initializes the Galerna instance.
@@ -77,15 +71,7 @@ class Galerna:
             If None, it defaults to True if log_file is None, and False otherwise.
         command : str
             Bash command string rendered with Jinja2 per case.
-        launcher_bulk : str, optional
-            Bash command rendered with Jinja2 for bulk execution.¡ 
-        tasks_per_node : int, optional
-            Number of commands processed by each SLURM_ARRAY_TASK_ID. Default is 1000
-        max_workers : int, optional
-            Number of concurrent jobs executed by parallel locally on each node. Default is 40.
-        sbatch_launcher : bool or str, optional
-            If True or a valid path to a template, generates a SLURM array script for
-             executing the cases in bulk on a cluster. Default is False."""
+"""
         
         if log_console is None:
             log_console = log_file is None
@@ -116,10 +102,6 @@ class Galerna:
         self.cases_name_format = cases_name_format
         self.mode = mode
         self.command = command
-        self.launcher_bulk = launcher_bulk
-        self.sbatch_launcher = sbatch_launcher
-        self.tasks_per_node = tasks_per_node
-        self.max_workers = max_workers
 
         if self.templates_dir is not None:
             if not os.path.isdir(self.templates_dir):
@@ -245,6 +227,7 @@ class Galerna:
     def build_case_and_render_files(self, case_context: dict) -> None:
         """
         Creates the case directory, calls build_case, and renders templates.
+        Preserves symbolic links instead of copying them.
 
         Parameters
         ----------
@@ -257,13 +240,25 @@ class Galerna:
         os.makedirs(case_dir, exist_ok=True)
         self.build_case(case_context)
         for t_name in self.templates_name:
-            try:
-                template = self.env.get_template(t_name)
-                rendered = template.render(case_context)
-                with open(op.join(case_dir, t_name), "w") as f:
-                    f.write(rendered)
-            except Exception:
-                copy_files(op.join(self.templates_dir, t_name), op.join(case_dir, t_name))
+            src_path = op.join(self.templates_dir, t_name)
+            dst_path = op.join(case_dir, t_name)
+            
+            if os.path.islink(src_path):
+                link_target = os.path.realpath(src_path)
+                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                if os.path.exists(dst_path) or os.path.islink(dst_path):
+                    os.remove(dst_path)
+                os.symlink(link_target, dst_path)
+                self.logger.debug(f"Created symlink {dst_path} -> {link_target}")
+            else:    
+                try:
+                    template = self.env.get_template(t_name)
+                    rendered = template.render(case_context)
+                    with open(dst_path, "w") as f:
+                        f.write(rendered)
+                except Exception:
+                    # If file cannot be rendered, check if it's a symlink
+                    copy_files(src_path, dst_path)
 
     def build_cases(
         self,
@@ -355,16 +350,32 @@ class Galerna:
         else:
             cases_list = list(range(len(self.cases_dirs)))
 
-        self.logger.debug(f"Running cases.")
+        unbuilt_cases = []
         for case_num in cases_list:
-            try:
-                self.run_case(
-                    case_num=case_num,
-                )
-            except Exception as exc:
-                self.logger.error(
-                    f"Job for case {case_num} generated an exception: {exc}."
-                )
+            case_dir = self.cases_context[case_num].get("case_dir")
+            if not os.path.exists(case_dir):
+                unbuilt_cases.append(case_num)
+                
+        if unbuilt_cases:
+            self.logger.info(f"Automatically building {len(unbuilt_cases)} unbuilt cases before running.")
+            self.build_cases(cases=unbuilt_cases)
+
+        self.logger.debug(f"Running cases.")
+
+        if True:
+            run_command_file = op.join(op.dirname(self.output_dir), "list_of_commands.txt")
+            create_command_line(cases_list, self.cases_context, run_command_file)
+            self.logger.info(f"List of commands created in {run_command_file}")
+        else: 
+            for case_num in cases_list:
+                try:
+                    self.run_case(
+                        case_num=case_num,
+                    )
+                except Exception as exc:
+                    self.logger.error(
+                        f"Job for case {case_num} generated an exception: {exc}."
+                    )
 
         self.logger.info("All cases executed.")
 
@@ -450,15 +461,49 @@ class Galerna:
             postprocessed_files.append(postprocessed_file)
         return postprocessed_files
     
-    def monitor_cases(self, **kwargs) -> None:
+    def get_case_status(self, case_context: dict) -> str:
         """
-        Monitor the cases execution. This can be implemented to check the status of the cases in a cluster environment, for example.
-        All extra keyword arguments will be passed to the monitor_case method.
-
-        Parameters
-        ----------
-        **kwargs
-            Additional keyword arguments to be passed to the monitor_case method.   
-        """
-
+        Get the status of a specific case. By default, it checks if a file named
+        status.txt exists in the case directory and reads its last line.
         
+        This method is designed to be easily overridden by subclasses to parse 
+        their specific log files and define custom statuses.
+        """
+        case_dir = case_context.get("case_dir")
+        if not case_dir or not os.path.exists(case_dir):
+            return "NOT_BUILT"
+            
+        status_file = os.path.join(case_dir, "status.txt")
+        if not os.path.exists(status_file):
+            return "UNKNOWN"
+            
+        try:
+            with open(status_file, "r") as f:
+                lines = f.readlines()
+                if lines:
+                    return lines[-1].strip()
+                else:
+                    return "EMPTY_STATUS_FILE"
+        except Exception:
+            return "ERROR_READING_STATUS"
+
+    def status_cases(self, cases: List[int] = None) -> Union[Dict[int, str], Any]:
+        """
+        Iterates over the given cases (or all cases) and returns their statuses.
+        Returns a dictionary or a Pandas DataFrame if pandas is installed.
+        """
+        if cases is not None:
+            cases_list = cases
+        else:
+            cases_list = list(range(len(self.cases_context)))
+            
+        status_dict = {}
+        for case_num in cases_list:
+            context = self.cases_context[case_num]
+            status_dict[case_num] = self.get_case_status(context)
+            
+        try:
+            import pandas as pd
+            return pd.DataFrame(list(status_dict.items()), columns=["case_num", "status"]).set_index("case_num")
+        except ImportError:
+            return status_dict

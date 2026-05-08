@@ -1,0 +1,11 @@
+name: galerna
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - snakemake
+  - snakemake-executor-plugin-slurm
+  - pip
+  - pip:
+      - -e .

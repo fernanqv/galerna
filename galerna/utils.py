@@ -1,7 +1,7 @@
 import logging
 import os
 import shutil
-from typing import Optional
+from typing import Dict, Optional
 import concurrent.futures
 import io
 import os.path as op
@@ -175,5 +175,4 @@ def create_command_line(cases, cases_context: Dict[str, dict], run_command_file:
     with open(run_command_file, 'w') as f:
         for case in cases:
             f.write(f"cd {cases_context[case]['case_dir']}; {cases_context[case]['command_cmd']}\n")
-
 

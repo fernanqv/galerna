@@ -6,6 +6,7 @@ dependencies:
   - python=3.11
   - snakemake
   - snakemake-executor-plugin-slurm
+  - ruff
   - pip
   - pip:
       - -e .

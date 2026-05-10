@@ -27,6 +27,34 @@ Snakemake execution should support:
 
 Galerna should not grow a full custom scheduler. It should build and describe parametric cases; Snakemake should handle serious orchestration.
 
+## Postprocess Design
+
+Postprocess orchestration can be deferred, but agents should preserve a path for it.
+
+Do not recommend folding postprocess work into the main per-case `command` as the default pattern. Keep `command` focused on running one simulation case. Future postprocess support should be modeled as an optional Galerna phase in the same YAML, not as a separate YAML that reuses the same case directories.
+
+The preferred future shape is:
+
+```yaml
+postprocess:
+  per_case:
+    command: "python extract_metrics.py output.nc metrics_{{case_id}}.csv"
+  aggregate:
+    command: "python merge_metrics.py metrics_*.csv summary.csv"
+  cleanup:
+    policy: keep
+```
+
+Postprocess should reuse the same case manifest produced by build, so selected cases, layouts, and case IDs remain consistent across phases.
+
+Postprocess should support:
+
+- per-case extraction from outputs such as NetCDF files;
+- optional aggregation across all selected cases into a single summary artifact;
+- optional cleanup of heavy raw outputs only after successful postprocess.
+
+Cleanup should be explicit and conservative. The default policy should keep raw outputs. Galerna, not the user's extraction script, should own cleanup policy when this feature is implemented.
+
 ## YAML Interface
 
 Keep the user-facing YAML simple. Do not expose Snakemake complexity unless the user explicitly needs it.
@@ -59,11 +87,16 @@ Galerna may generate files under `<output_dir>/.galerna/`, such as:
 - `cases.tsv`
 - `Snakefile`
 
-Per-case logs should live in each `case_dir` by default, for example:
+For `cases.layout: directories`, per-case logs and status should live in each `case_dir`, for example:
 
 - `galerna.out`
 - `galerna.err`
-- `.galerna.done`
+- `galerna.status`
+
+For `cases.layout: shared`, logs and status should live under `<output_dir>/.galerna/`, with status grouped by Snakemake job/bulk group where possible:
+
+- `.galerna/logs/<case_id>.out`
+- `.galerna/logs/<case_id>.err`
+- `.galerna/status/status_<group_id>.tsv`
 
 Use Snakemake input functions or `lambda` where needed so arbitrary Galerna case directory names are supported.
-

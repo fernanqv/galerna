@@ -1,24 +1,24 @@
+import io
 import logging
 import os
-import shutil
-from typing import Dict, Optional
-import concurrent.futures
-import io
 import os.path as op
+import shutil
 import subprocess
 import sys
 
 
-
 def get_simple_logger(
-    name: str, level: str = "INFO", log_file: Optional[str] = None, console: bool = True
+    name: str,
+    level: str = "INFO",
+    log_file: str | None = None,
+    console: bool = True,
 ) -> logging.Logger:
     """
     Creates a simple logger that outputs to console and optionally to a file.
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    
+
     # Avoid adding handlers if they already exist
     if logger.handlers:
         return logger
@@ -26,13 +26,13 @@ def get_simple_logger(
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    
+
     # Console handler
     if console:
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
-    
+
     # File handler
     if log_file:
         log_dir = os.path.dirname(log_file)
@@ -41,7 +41,7 @@ def get_simple_logger(
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
-            
+
     return logger
 
 
@@ -70,13 +70,14 @@ def copy_files(src: str, dst: str) -> None:
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copy2(src, dst)
 
+
 def exec_bash_command(
     cmd: str,
     cwd: str,
-    stdout_log: Optional[str] = None,
-    stderr_log: Optional[str] = None,
-    logger: Optional[logging.Logger] = None,
-    log_output: bool = False
+    stdout_log: str | None = None,
+    stderr_log: str | None = None,
+    logger: logging.Logger | None = None,
+    log_output: bool = False,
 ) -> None:
     """
     Execute a bash command with optional log redirection, merging, and logging output.
@@ -84,48 +85,49 @@ def exec_bash_command(
 
     if logger:
         logger.debug(f"Executing command: {cmd} in {cwd}")
-    
+
     actual_stdout = None
     actual_stderr = None
-    
+
     if stdout_log:
         out_path = op.join(cwd, stdout_log)
         actual_stdout = open(out_path, "w")
-    
+
     if stderr_log:
         if stderr_log == stdout_log:
             actual_stderr = subprocess.STDOUT
         else:
             err_path = op.join(cwd, stderr_log)
             actual_stderr = open(err_path, "w")
-    
+
     try:
         # If log_output is requested, we need to capture output to process it
         stdout_pipe = subprocess.PIPE if log_output else actual_stdout
-        stderr_pipe = subprocess.PIPE if log_output and actual_stderr != subprocess.STDOUT else actual_stderr
-        
+        stderr_pipe = (
+            subprocess.PIPE
+            if log_output and actual_stderr != subprocess.STDOUT
+            else actual_stderr
+        )
+
         process = subprocess.Popen(
-            cmd, 
-            shell=True, 
-            cwd=cwd, 
+            cmd,
+            shell=True,
+            cwd=cwd,
             stdout=stdout_pipe,
             stderr=stderr_pipe,
-            text=True, # Decode as strings
-            bufsize=1  # Line buffered
+            text=True,
+            bufsize=1,
         )
 
         if log_output:
-            # We need to read from stdout (and potentially stderr) and log it while also writing to the file
-            # If actual_stderr is STDOUT, stderr is merged into stdout
-            
             import select
-            
+
             streams = []
             if process.stdout:
                 streams.append(process.stdout)
             if process.stderr:
                 streams.append(process.stderr)
-                
+
             while streams:
                 readable, _, _ = select.select(streams, [], [])
                 for stream in readable:
@@ -133,29 +135,36 @@ def exec_bash_command(
                     if not line:
                         streams.remove(stream)
                         continue
-                    
-                    line_stripped = line.rstrip('\n')
+
+                    line_stripped = line.rstrip("\n")
                     if logger:
-                        if stream is process.stderr and actual_stderr != subprocess.STDOUT:
+                        if (
+                            stream is process.stderr
+                            and actual_stderr != subprocess.STDOUT
+                        ):
                             logger.error(line_stripped)
                         else:
                             logger.info("Running command: %s: %s", cmd, line_stripped)
                     else:
                         sys.stdout.write(line)
                         sys.stdout.flush()
-                    
+
                     if stream is process.stdout and actual_stdout:
                         actual_stdout.write(line)
                         actual_stdout.flush()
-                    elif stream is process.stderr and actual_stderr and actual_stderr != subprocess.STDOUT:
+                    elif (
+                        stream is process.stderr
+                        and actual_stderr
+                        and actual_stderr != subprocess.STDOUT
+                    ):
                         actual_stderr.write(line)
                         actual_stderr.flush()
-            
+
         process.wait()
-        
+
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, cmd)
-            
+
     except subprocess.CalledProcessError as e:
         if logger:
             logger.error(f"Command failed in {cwd}: {e}")
@@ -171,8 +180,10 @@ def exec_bash_command(
             actual_stderr.close()
 
 
-def create_command_line(cases, cases_context: Dict[str, dict], run_command_file: str) -> None:
-    with open(run_command_file, 'w') as f:
+def create_command_line(
+    cases, cases_context: dict[str, dict], run_command_file: str
+) -> None:
+    with open(run_command_file, "w") as f:
         for case in cases:
-            f.write(f"cd {cases_context[case]['case_dir']}; {cases_context[case]['command_cmd']}\n")
-
+            case_context = cases_context[case]
+            f.write(f"cd {case_context['case_dir']}; {case_context['command_cmd']}\n")

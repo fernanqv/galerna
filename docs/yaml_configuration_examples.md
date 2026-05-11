@@ -427,6 +427,7 @@ Suggested content:
 
 ```tsv
 timestamp	status	message
+2026-05-10T11:55:00Z	BUILT	case built
 2026-05-10T12:00:00Z	STARTED	
 2026-05-10T12:03:10Z	DONE	exit_code=0
 ```
@@ -444,6 +445,7 @@ Suggested content:
 
 ```tsv
 timestamp	case_id	status	message
+2026-05-10T11:55:00Z	case_0000	BUILT	case built
 2026-05-10T12:00:00Z	case_0000	STARTED	
 2026-05-10T12:03:10Z	case_0000	DONE	exit_code=0
 ```
@@ -452,7 +454,7 @@ For shared bulk execution, prefer one status file per bulk group instead of one 
 
 `galerna.status` and `status_<group_id>.tsv` are human/historical logs. `.galerna.done` and `.galerna/done/<group_id>.done` are technical success markers for Snakemake and should only be created after the corresponding case or group succeeds.
 
-Users may append their own status lines after Galerna has run. Galerna should reserve execution statuses such as `STARTED`, `DONE`, `FAILED`, and future technical statuses such as `SKIPPED`, but it should not reject custom statuses.
+Users may append their own status lines after Galerna has run. Galerna should reserve execution statuses such as `BUILT`, `STARTED`, `DONE`, `FAILED`, and future technical statuses such as `SKIPPED`, but it should not reject custom statuses.
 
 For example, a user or post-run script could append:
 
@@ -473,10 +475,11 @@ The rule for users should be: append new lines, do not edit or delete existing s
 
 Suggested status logic for `galerna status`:
 
+- `NOT_BUILT`: the case is in the manifest, but no status line exists for it.
+- `BUILT`: latest status line is `BUILT`; the case has been generated but not started.
 - `DONE`: latest status line is `DONE`.
 - `FAILED`: latest status line is `FAILED`.
 - `RUNNING`: latest status line is `STARTED` or another active custom status.
-- `PENDING`: no status line exists for the case.
 
 `galerna status` exposes both views:
 

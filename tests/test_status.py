@@ -60,12 +60,29 @@ def test_status_cases_reports_latest_human_status_and_pending_cases(tmp_path):
         },
         {
             "case_id": "0001",
-            "status": "PENDING",
+            "status": "NOT_BUILT",
             "timestamp": "",
             "message": "",
             "done": "no",
         },
     ]
+
+
+def test_build_cases_records_built_status(tmp_path):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1, 2]},
+        command="echo {{station}}",
+    )
+
+    wrapper.build_cases(cases=[1])
+
+    statuses = wrapper.status_cases()
+
+    assert [row["case_id"] for row in statuses] == ["0000", "0001"]
+    assert [row["status"] for row in statuses] == ["NOT_BUILT", "BUILT"]
+    assert statuses[1]["message"] == "case built"
 
 
 def test_status_cases_execution_view_ignores_custom_statuses(tmp_path):
@@ -100,7 +117,7 @@ def test_status_cases_can_filter_manifest_cases(tmp_path):
     statuses = wrapper.status_cases(cases=[0, 1])
 
     assert [row["case_id"] for row in statuses] == ["0000", "0001"]
-    assert [row["status"] for row in statuses] == ["PENDING", "DONE"]
+    assert [row["status"] for row in statuses] == ["NOT_BUILT", "DONE"]
 
 
 def test_shared_done_uses_execution_status_after_custom_status(tmp_path):

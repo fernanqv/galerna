@@ -16,7 +16,7 @@ from .utils import copy_files, get_simple_logger
 
 DEFAULT_CASE_ID_FORMAT = '{{ "%04d" | format(case_num) }}'
 DEBUG_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-EXECUTION_STATUSES = {"STARTED", "DONE", "FAILED", "SKIPPED"}
+EXECUTION_STATUSES = {"BUILT", "STARTED", "DONE", "FAILED", "SKIPPED"}
 
 
 @dataclass
@@ -402,6 +402,7 @@ class Galerna:
     def _build_shared_layout(self, contexts: list[dict]) -> None:
         for context in contexts:
             self.build_case(context)
+            self._mark_built(context)
 
     def _build_directory_layout(self, contexts: list[dict]) -> None:
         for context in contexts:
@@ -412,6 +413,7 @@ class Galerna:
             case_dir.mkdir(parents=True, exist_ok=True)
             self.build_case(context)
             self._render_templates(context)
+            self._mark_built(context)
 
     def _render_templates(self, context: dict) -> None:
         if self.env is None:
@@ -587,6 +589,11 @@ class Galerna:
                 writer.writeheader()
             writer.writerow(row)
 
+    def _mark_built(self, context: dict) -> None:
+        if self._latest_status(context, execution=True) is not None:
+            return
+        self._append_status(context, "BUILT", "case built")
+
     def _remove_done_marker(self, context: dict) -> None:
         done_file = Path(context["done_file"])
         if done_file.exists():
@@ -671,7 +678,7 @@ class Galerna:
                 statuses.append(
                     {
                         "case_id": context["case_id"],
-                        "status": "PENDING",
+                        "status": "NOT_BUILT",
                         "timestamp": "",
                         "message": "",
                         "done": "yes" if Path(context["done_file"]).exists() else "no",

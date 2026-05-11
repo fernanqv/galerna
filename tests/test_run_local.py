@@ -36,7 +36,7 @@ def test_run_local_executes_cases_sequentially(tmp_path):
     assert (output_dir / "0001" / ".galerna.done").is_file()
 
     status_rows = read_status_rows(output_dir / "0000" / "galerna.status")
-    assert [row["status"] for row in status_rows] == ["STARTED", "DONE"]
+    assert [row["status"] for row in status_rows] == ["BUILT", "STARTED", "DONE"]
 
 
 def test_run_local_directory_layout_writes_stdout_and_stderr_logs(tmp_path, capsys):
@@ -94,7 +94,7 @@ def test_run_local_failure_writes_failed_status_without_done_file(tmp_path):
         wrapper.run_cases()
 
     status_rows = read_status_rows(output_dir / "0000" / "galerna.status")
-    assert [row["status"] for row in status_rows] == ["STARTED", "FAILED"]
+    assert [row["status"] for row in status_rows] == ["BUILT", "STARTED", "FAILED"]
     assert status_rows[-1]["message"] == "exit_code=7"
     assert (output_dir / "0000" / "galerna.out").read_text() == "boom\n"
     assert not (output_dir / "0000" / ".galerna.done").exists()
@@ -122,6 +122,8 @@ def test_run_local_shared_layout_uses_group_status_and_done(tmp_path):
         output_dir / ".galerna" / "status" / "status_cases.tsv"
     )
     assert [(row["case_id"], row["status"]) for row in status_rows] == [
+        ("0000", "BUILT"),
+        ("0001", "BUILT"),
         ("0000", "STARTED"),
         ("0000", "DONE"),
         ("0001", "STARTED"),

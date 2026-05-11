@@ -96,9 +96,11 @@ For `cases.layout: directories`, per-case logs and status should live in each `c
 
 `galerna.status` is the human/historical status log. `.galerna.done` is the technical success marker for Snakemake and should only be created after the case command succeeds.
 
-Status logs are append-only TSV files. Galerna may reserve statuses such as `STARTED`, `DONE`, `FAILED`, and future technical states such as `SKIPPED`, but it should accept additional user-defined statuses. Users should be able to append lines such as `QC_OK`, `TRANSFERRED`, or `ARCHIVED` after Galerna finishes, without editing previous lines.
+Status logs are append-only TSV files. Galerna may reserve statuses such as `BUILT`, `STARTED`, `DONE`, `FAILED`, and future technical states such as `SKIPPED`, but it should accept additional user-defined statuses. Users should be able to append lines such as `QC_OK`, `TRANSFERRED`, or `ARCHIVED` after Galerna finishes, without editing previous lines.
 
-Future `galerna status` behavior should distinguish between:
+`BUILT` should be written by the build phase. `NOT_BUILT` should be a calculated status for cases that exist in the manifest but do not yet have any status line; it should not normally be written to a status file.
+
+`galerna status` should distinguish between:
 
 - the latest human status, including user-defined statuses;
 - the latest Galerna execution status, considering only Galerna-reserved statuses.

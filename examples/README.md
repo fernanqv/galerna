@@ -134,3 +134,16 @@ galerna status
 ```
 
 For normal local execution, prefer `run.mode: cases`.
+
+### 09 Snakemake Shared Bulk
+
+Combines `cases.layout: shared` with `run.mode: bulk`. This is the lowest-inode example and is useful for testing the shape of future SLURM bulk runs.
+
+```bash
+cd examples/09_snakemake_shared_bulk
+galerna build
+galerna run
+galerna status
+```
+
+Outputs must include `case_id`; status and done files are grouped by bulk group.

@@ -96,6 +96,15 @@ For `cases.layout: directories`, per-case logs and status should live in each `c
 
 `galerna.status` is the human/historical status log. `.galerna.done` is the technical success marker for Snakemake and should only be created after the case command succeeds.
 
+Status logs are append-only TSV files. Galerna may reserve statuses such as `STARTED`, `DONE`, `FAILED`, and future technical states such as `SKIPPED`, but it should accept additional user-defined statuses. Users should be able to append lines such as `QC_OK`, `TRANSFERRED`, or `ARCHIVED` after Galerna finishes, without editing previous lines.
+
+Future `galerna status` behavior should distinguish between:
+
+- the latest human status, including user-defined statuses;
+- the latest Galerna execution status, considering only Galerna-reserved statuses.
+
+`.galerna.done` remains the technical success marker for workflow engines and must not be replaced by custom status lines.
+
 For `cases.layout: shared`, logs and status should live under `<output_dir>/.galerna/`, with status grouped by Snakemake job/bulk group where possible:
 
 - `.galerna/logs/<case_id>.out`

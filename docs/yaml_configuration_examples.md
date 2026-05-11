@@ -452,9 +452,33 @@ For shared bulk execution, prefer one status file per bulk group instead of one 
 
 `galerna.status` and `status_<group_id>.tsv` are human/historical logs. `.galerna.done` and `.galerna/done/<group_id>.done` are technical success markers for Snakemake and should only be created after the corresponding case or group succeeds.
 
+Users may append their own status lines after Galerna has run. Galerna should reserve execution statuses such as `STARTED`, `DONE`, `FAILED`, and future technical statuses such as `SKIPPED`, but it should not reject custom statuses.
+
+For example, a user or post-run script could append:
+
+```tsv
+timestamp	status	message
+2026-05-10T12:10:00Z	QC_OK	output checked manually
+2026-05-10T12:15:00Z	TRANSFERRED	copied to archive
+```
+
+For shared layout, include `case_id`:
+
+```tsv
+timestamp	case_id	status	message
+2026-05-10T12:10:00Z	case_0000	QC_OK	output checked manually
+```
+
+The rule for users should be: append new lines, do not edit or delete existing status history. Custom statuses are useful for manual QA, transfers, archiving, or project-specific review stages. They do not replace `.galerna.done`, which remains the workflow-engine marker for technical completion.
+
 Suggested status logic for `galerna status`:
 
 - `DONE`: latest status line is `DONE`.
 - `FAILED`: latest status line is `FAILED`.
 - `RUNNING`: latest status line is `STARTED` or another active custom status.
 - `PENDING`: no status line exists for the case.
+
+A future `galerna status` can expose both views:
+
+- default: latest human status, including custom user statuses;
+- execution/technical view: latest Galerna-reserved execution status, ignoring later custom statuses.

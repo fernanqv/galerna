@@ -112,6 +112,65 @@ def test_cli_run_verbose_shows_case_directory_and_command(tmp_path):
     assert "  done" in result.stdout
 
 
+def test_cli_loads_wrapper_from_default_config(tmp_path):
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "run_case.py").write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                'Path("result.txt").write_text("derived={{ derived }}\\n")',
+            ]
+        )
+    )
+
+    (tmp_path / "custom_wrapper.py").write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "from galerna import Galerna",
+                "",
+                "class ExampleWrapper(Galerna):",
+                "    def build_case(self, case_context):",
+                '        case_dir = Path(case_context["case_dir"])',
+                "        assert case_dir.is_dir()",
+                '        case_context["derived"] = case_context["station"] * 10',
+                '        (case_dir / "derived.txt").write_text(',
+                '            str(case_context["derived"])',
+                "        )",
+            ]
+        )
+    )
+
+    (tmp_path / "galerna.yaml").write_text(
+        "\n".join(
+            [
+                "wrapper:",
+                "  code: custom_wrapper.py",
+                "  class: ExampleWrapper",
+                "templates_dir: templates",
+                "output_dir: output",
+                "variable_parameters:",
+                "  station: [3]",
+                'command: "python run_case.py"',
+            ]
+        )
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "galerna.cli", "run"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    case_dir = tmp_path / "output" / "0000"
+    assert "Loading custom wrapper from custom_wrapper.py..." in result.stdout
+    assert (case_dir / "derived.txt").read_text() == "30"
+    assert (case_dir / "result.txt").read_text() == "derived=30\n"
+
+
 def test_cli_debug_enables_internal_debug_logging(tmp_path):
     config_path = tmp_path / "galerna.yaml"
     config_path.write_text(

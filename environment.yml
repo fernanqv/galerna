@@ -7,6 +7,7 @@ dependencies:
   - snakemake
   - snakemake-executor-plugin-slurm
   - ruff
+  - pytest
   - pip
   - pip:
       - -e .

@@ -1,5 +1,0 @@
-case_id	case_num	case_dir	command
-0000	0	/Users/valva/Library/CloudStorage/OneDrive-UNICAN/repos/galerna/examples/snakemake_manual/runs/case_0000	python -c 'import time; print("case 0 start", flush=True); time.sleep(20); print("case 0 done", flush=True)'
-0001	1	/Users/valva/Library/CloudStorage/OneDrive-UNICAN/repos/galerna/examples/snakemake_manual/runs/case_0001	python -c 'import time; print("case 1 start", flush=True); time.sleep(20); print("case 1 done", flush=True)'
-0002	2	/Users/valva/Library/CloudStorage/OneDrive-UNICAN/repos/galerna/examples/snakemake_manual/runs/case_0002	python -c 'import time; print("case 2 start", flush=True); time.sleep(20); print("case 2 done", flush=True)'
-0003	3	/Users/valva/Library/CloudStorage/OneDrive-UNICAN/repos/galerna/examples/snakemake_manual/runs/case_0003	python -c 'import time; print("case 3 start", flush=True); time.sleep(20); print("case 3 done", flush=True)'

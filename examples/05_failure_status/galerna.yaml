@@ -1,0 +1,13 @@
+output_dir: "runs"
+
+cases:
+  layout: directories
+
+variable_parameters:
+  station: [1, 2]
+  should_fail: [false, true]
+
+command: "python -c 'import sys, time; print(\"START {{case_id}} fail={{should_fail}}\", flush=True); time.sleep(1); sys.exit(5 if {{should_fail}} else 0)'"
+
+run:
+  backend: local

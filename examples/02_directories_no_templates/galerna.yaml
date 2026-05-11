@@ -1,0 +1,12 @@
+output_dir: "runs"
+
+cases:
+  layout: directories
+
+variable_parameters:
+  station: [10, 20, 30]
+
+command: "python -c 'from pathlib import Path; import time; print(\"START {{case_id}} station={{station}}\", flush=True); time.sleep(1); Path(\"result_{{case_id}}.txt\").write_text(\"station={{station}}\\n\"); print(\"DONE {{case_id}}\", flush=True)'"
+
+run:
+  backend: local

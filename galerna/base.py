@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, Template
 from .utils import copy_files, get_simple_logger
 
 DEFAULT_CASE_ID_FORMAT = '{{ "%04d" | format(case_num) }}'
+DEBUG_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
 @dataclass
@@ -86,6 +87,9 @@ class Galerna:
             level=log_level,
             log_file=log_file,
             console=log_console,
+            console_format=(
+                DEBUG_LOG_FORMAT if log_level.upper() == "DEBUG" else "%(message)s"
+            ),
         )
 
         self.templates_dir = templates_dir
@@ -376,7 +380,7 @@ class Galerna:
         except ImportError:
             return self.cases_context
 
-    def build_cases(self, cases: list[int] | None = None) -> None:
+    def build_cases(self, cases: list[int] | None = None) -> int:
         contexts_to_build = self._select_contexts(cases)
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
         Path(self.galerna_dir).mkdir(parents=True, exist_ok=True)
@@ -387,6 +391,7 @@ class Galerna:
             self._build_directory_layout(contexts_to_build)
 
         self.write_manifest()
+        return len(contexts_to_build)
 
     def _select_contexts(self, cases: list[int] | None = None) -> list[dict]:
         if cases is None:
@@ -467,9 +472,13 @@ class Galerna:
                     }
                 )
 
-        self.logger.info("Cases manifest saved to %s", manifest_path)
+        self.logger.debug("Cases manifest saved to %s", manifest_path)
 
-    def run_cases(self, cases: list[int] | None = None) -> None:
+    def run_cases(
+        self,
+        cases: list[int] | None = None,
+        progress: Callable[[str, dict, int, int], None] | None = None,
+    ) -> None:
         if self.run_config.backend != "local":
             raise NotImplementedError(
                 f"run.backend: {self.run_config.backend} is not implemented yet."
@@ -477,9 +486,19 @@ class Galerna:
 
         contexts_to_run = self._select_contexts(cases)
         self._ensure_cases_built(contexts_to_run)
+        total = len(contexts_to_run)
 
-        for context in contexts_to_run:
-            self._run_case_local(context)
+        for position, context in enumerate(contexts_to_run, start=1):
+            if progress:
+                progress("start", context, position, total)
+            try:
+                self._run_case_local(context)
+            except subprocess.CalledProcessError:
+                if progress:
+                    progress("failed", context, position, total)
+                raise
+            if progress:
+                progress("done", context, position, total)
 
     def _ensure_cases_built(self, contexts: list[dict]) -> None:
         if self.cases_config.layout == "shared":
@@ -514,7 +533,7 @@ class Galerna:
         self._remove_done_marker(context)
 
         self._append_status(context, "STARTED", "")
-        self.logger.info(
+        self.logger.debug(
             "Running case %s in %s with command=%s",
             context["case_id"],
             case_dir,

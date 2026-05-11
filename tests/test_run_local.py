@@ -39,6 +39,28 @@ def test_run_local_executes_cases_sequentially(tmp_path):
     assert [row["status"] for row in status_rows] == ["STARTED", "DONE"]
 
 
+def test_run_local_directory_layout_writes_stdout_and_stderr_logs(tmp_path, capsys):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1]},
+        command=(
+            "python -c 'import sys; "
+            'print("stdout from {{case_id}}"); '
+            'print("stderr from {{case_id}}", file=sys.stderr)\''
+        ),
+        log_console=False,
+    )
+
+    wrapper.run_cases()
+
+    assert (output_dir / "0000" / "galerna.out").read_text() == "stdout from 0000\n"
+    assert (output_dir / "0000" / "galerna.err").read_text() == "stderr from 0000\n"
+    captured = capsys.readouterr()
+    assert "stdout from 0000" not in captured.out
+    assert "stderr from 0000" not in captured.err
+
+
 def test_run_local_cases_subset_only_executes_selected_cases(tmp_path):
     output_dir = tmp_path / "output"
     wrapper = Galerna(
@@ -74,6 +96,7 @@ def test_run_local_failure_writes_failed_status_without_done_file(tmp_path):
     status_rows = read_status_rows(output_dir / "0000" / "galerna.status")
     assert [row["status"] for row in status_rows] == ["STARTED", "FAILED"]
     assert status_rows[-1]["message"] == "exit_code=7"
+    assert (output_dir / "0000" / "galerna.out").read_text() == "boom\n"
     assert not (output_dir / "0000" / ".galerna.done").exists()
 
 
@@ -104,3 +127,29 @@ def test_run_local_shared_layout_uses_group_status_and_done(tmp_path):
         ("0001", "STARTED"),
         ("0001", "DONE"),
     ]
+
+
+def test_run_local_shared_layout_writes_logs_under_galerna(tmp_path, capsys):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        cases={"layout": "shared"},
+        variable_parameters={"station": [1]},
+        command=(
+            "python -c 'import sys; "
+            'print("shared stdout {{case_id}}"); '
+            'print("shared stderr {{case_id}}", file=sys.stderr)\''
+        ),
+        log_console=False,
+    )
+
+    wrapper.run_cases()
+
+    logs_dir = output_dir / ".galerna" / "logs"
+    assert (logs_dir / "0000.out").read_text() == "shared stdout 0000\n"
+    assert (logs_dir / "0000.err").read_text() == "shared stderr 0000\n"
+    assert not (output_dir / "galerna.out").exists()
+    assert not (output_dir / "galerna.err").exists()
+    captured = capsys.readouterr()
+    assert "shared stdout 0000" not in captured.out
+    assert "shared stderr 0000" not in captured.err

@@ -415,9 +415,16 @@ run:
 
 For a first Galerna version, this can remain a reserved interface rather than an implemented backend.
 
-## Status Files
+## Status Files And `galerna status`
 
-Generated workflows should write status lines so `galerna status` can work without depending on SLURM commands such as `squeue` or `sacct`.
+Galerna writes append-only status logs so `galerna status` can report progress without depending on external schedulers such as SLURM commands `squeue` or `sacct`.
+
+The important distinction is:
+
+- `galerna.status` and `status_<group_id>.tsv`: human/historical logs;
+- `.galerna.done` and `.galerna/done/*.done`: technical success markers for local execution and workflow engines.
+
+`galerna status` reads the manifest plus these status files. It does not need to query Snakemake or SLURM.
 
 For directory layout:
 
@@ -435,13 +442,13 @@ timestamp	status	message
 2026-05-10T12:03:10Z	DONE	exit_code=0
 ```
 
+The build phase writes `BUILT`. The run phase then appends `STARTED` and either `DONE` or `FAILED`.
+
 For shared layout:
 
 ```text
 runs/.galerna/status/status_cases.tsv
 runs/.galerna/status/status_bulk_0000.tsv
-runs/.galerna/done/cases.done
-runs/.galerna/done/bulk_0000.done
 ```
 
 Suggested content:
@@ -455,7 +462,27 @@ timestamp	case_id	status	message
 
 For shared bulk execution, prefer one status file per bulk group instead of one global file. This keeps inode use low while avoiding many jobs appending concurrently to the same file.
 
-`galerna.status` and `status_<group_id>.tsv` are human/historical logs. `.galerna.done` and `.galerna/done/<group_id>.done` are technical success markers for Snakemake and should only be created after the corresponding case or group succeeds.
+Technical done markers depend on the layout and execution mode:
+
+```text
+directory layout:
+  runs/0000/.galerna.done
+
+shared layout, local backend:
+  runs/.galerna/done/cases.done
+
+shared layout, snakemake cases:
+  runs/.galerna/done/case_0000.done
+  runs/.galerna/done/case_0001.done
+
+shared layout, snakemake bulk:
+  runs/.galerna/done/bulk_0000.done
+  runs/.galerna/done/bulk_0001.done
+```
+
+For `run.backend: snakemake` with `run.mode: cases`, shared layout intentionally keeps one status file for the cases group but uses one `.galerna/done/<case_id>.done` marker per case. Snakemake needs a distinct technical output for each case rule.
+
+For bulk execution, one `.galerna/done/bulk_<group_id>.done` marker should be created after the corresponding bulk group succeeds.
 
 Users may append their own status lines after Galerna has run. Galerna should reserve execution statuses such as `BUILT`, `STARTED`, `DONE`, `FAILED`, and future technical statuses such as `SKIPPED`, but it should not reject custom statuses.
 
@@ -476,15 +503,28 @@ timestamp	case_id	status	message
 
 The rule for users should be: append new lines, do not edit or delete existing status history. Custom statuses are useful for manual QA, transfers, archiving, or project-specific review stages. They do not replace `.galerna.done`, which remains the workflow-engine marker for technical completion.
 
-Suggested status logic for `galerna status`:
+Current `galerna status` logic:
 
 - `NOT_BUILT`: the case is in the manifest, but no status line exists for it.
 - `BUILT`: latest status line is `BUILT`; the case has been generated but not started.
+- `STARTED`: latest status line is `STARTED`; the case has started and no later status exists.
 - `DONE`: latest status line is `DONE`.
 - `FAILED`: latest status line is `FAILED`.
-- `RUNNING`: latest status line is `STARTED` or another active custom status.
+- custom status: latest status line is user-defined, for example `QC_OK` or `TRANSFERRED`.
 
 `galerna status` exposes both views:
 
 - default: latest human status, including custom user statuses;
 - `galerna status --execution`: latest Galerna-reserved execution status, ignoring later custom statuses.
+
+For example, after a successful run followed by manual QA:
+
+```tsv
+timestamp	status	message
+2026-05-10T11:55:00Z	BUILT	case built
+2026-05-10T12:00:00Z	STARTED	
+2026-05-10T12:03:10Z	DONE	exit_code=0
+2026-05-10T12:10:00Z	QC_OK	output checked manually
+```
+
+`galerna status` reports `QC_OK`, while `galerna status --execution` reports `DONE`.

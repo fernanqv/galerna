@@ -254,6 +254,8 @@ runs/
   .galerna/
     cases.tsv
     Snakefile
+    done/
+      cases.done
     logs/
       case_0000.out
       case_0000.err
@@ -418,6 +420,7 @@ For directory layout:
 
 ```text
 runs/0000/galerna.status
+runs/0000/.galerna.done
 ```
 
 Suggested content:
@@ -433,6 +436,8 @@ For shared layout:
 ```text
 runs/.galerna/status/status_cases.tsv
 runs/.galerna/status/status_bulk_0000.tsv
+runs/.galerna/done/cases.done
+runs/.galerna/done/bulk_0000.done
 ```
 
 Suggested content:
@@ -444,6 +449,8 @@ timestamp	case_id	status	message
 ```
 
 For shared bulk execution, prefer one status file per bulk group instead of one global file. This keeps inode use low while avoiding many jobs appending concurrently to the same file.
+
+`galerna.status` and `status_<group_id>.tsv` are human/historical logs. `.galerna.done` and `.galerna/done/<group_id>.done` are technical success markers for Snakemake and should only be created after the corresponding case or group succeeds.
 
 Suggested status logic for `galerna status`:
 

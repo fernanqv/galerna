@@ -343,6 +343,7 @@ class Galerna:
             context["stdout_log"] = str(case_dir / "galerna.out")
             context["stderr_log"] = str(case_dir / "galerna.err")
             context["status_file"] = str(case_dir / "galerna.status")
+            context["done_file"] = str(case_dir / ".galerna.done")
             context["status_group"] = case_id
             return
 
@@ -351,6 +352,9 @@ class Galerna:
         context["status_group"] = self._status_group_for_shared_layout(context)
         context["status_file"] = str(
             galerna_dir / "status" / f"status_{context['status_group']}.tsv"
+        )
+        context["done_file"] = str(
+            galerna_dir / "done" / f"{context['status_group']}.done"
         )
 
     def _status_group_for_shared_layout(self, context: dict) -> str:
@@ -437,6 +441,7 @@ class Galerna:
             "stdout_log",
             "stderr_log",
             "status_file",
+            "done_file",
             "status_group",
         ]
         manifest_path = Path(self.manifest_path)
@@ -455,6 +460,7 @@ class Galerna:
                         "stdout_log": context["stdout_log"],
                         "stderr_log": context["stderr_log"],
                         "status_file": context["status_file"],
+                        "done_file": context["done_file"],
                         "status_group": context["status_group"],
                     }
                 )

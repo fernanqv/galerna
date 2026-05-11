@@ -92,11 +92,15 @@ For `cases.layout: directories`, per-case logs and status should live in each `c
 - `galerna.out`
 - `galerna.err`
 - `galerna.status`
+- `.galerna.done`
+
+`galerna.status` is the human/historical status log. `.galerna.done` is the technical success marker for Snakemake and should only be created after the case command succeeds.
 
 For `cases.layout: shared`, logs and status should live under `<output_dir>/.galerna/`, with status grouped by Snakemake job/bulk group where possible:
 
 - `.galerna/logs/<case_id>.out`
 - `.galerna/logs/<case_id>.err`
 - `.galerna/status/status_<group_id>.tsv`
+- `.galerna/done/<group_id>.done`
 
 Use Snakemake input functions or `lambda` where needed so arbitrary Galerna case directory names are supported.

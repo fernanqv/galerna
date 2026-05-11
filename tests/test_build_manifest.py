@@ -102,3 +102,32 @@ def test_all_combinations_builds_cartesian_product(tmp_path):
         "echo 2 gcc",
         "echo 2 intel",
     ]
+
+
+def test_build_case_hook_runs_before_template_rendering(tmp_path):
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "params.txt").write_text(
+        "station={{ station }} derived={{ derived_file_exists }}"
+    )
+    output_dir = tmp_path / "output"
+
+    class CustomGalerna(Galerna):
+        def build_case(self, case_context):
+            case_dir = output_dir / case_context["case_id"]
+            assert case_dir.is_dir()
+            (case_dir / "derived.txt").write_text("created by hook\n")
+            case_context["derived_file_exists"] = (case_dir / "derived.txt").exists()
+
+    wrapper = CustomGalerna(
+        templates_dir=str(templates_dir),
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1]},
+        command="echo {{station}}",
+    )
+
+    wrapper.build_cases()
+
+    case_dir = output_dir / "0000"
+    assert (case_dir / "derived.txt").read_text() == "created by hook\n"
+    assert (case_dir / "params.txt").read_text() == "station=1 derived=True"

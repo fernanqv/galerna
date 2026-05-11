@@ -3,6 +3,7 @@ import itertools
 import logging
 import os
 import re
+import shlex
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -125,6 +126,10 @@ class Galerna:
     @property
     def manifest_path(self) -> str:
         return str(Path(self.galerna_dir) / "cases.tsv")
+
+    @property
+    def snakefile_path(self) -> str:
+        return str(Path(self.galerna_dir) / "Snakefile")
 
     @property
     def normalized_config(self) -> dict:
@@ -360,8 +365,9 @@ class Galerna:
         context["status_file"] = str(
             galerna_dir / "status" / f"status_{context['status_group']}.tsv"
         )
+        done_group = self._done_group_for_shared_layout(context)
         context["done_file"] = str(
-            galerna_dir / "done" / f"{context['status_group']}.done"
+            galerna_dir / "done" / f"{done_group}.done"
         )
 
     def _status_group_for_shared_layout(self, context: dict) -> str:
@@ -369,6 +375,14 @@ class Galerna:
             return "cases"
         group_num = context["case_num"] // self.run_config.tasks_per_job
         return f"bulk_{group_num:04d}"
+
+    def _done_group_for_shared_layout(self, context: dict) -> str:
+        if (
+            self.run_config.backend == "snakemake"
+            and self.run_config.mode == "cases"
+        ):
+            return context["case_id"]
+        return context["status_group"]
 
     def build_case(self, case_context: dict) -> None:
         """Hook for subclasses to add custom case build logic."""
@@ -392,6 +406,7 @@ class Galerna:
             self._build_directory_layout(contexts_to_build)
 
         self.write_manifest()
+        self.write_workflow_artifacts()
         return len(contexts_to_build)
 
     def _select_contexts(self, cases: list[int] | None = None) -> list[dict]:
@@ -477,11 +492,134 @@ class Galerna:
 
         self.logger.debug("Cases manifest saved to %s", manifest_path)
 
+    def write_workflow_artifacts(self) -> None:
+        if self.run_config.backend != "snakemake":
+            return
+        if self.run_config.workflow.source == "user":
+            return
+        if self.run_config.mode != "cases":
+            raise NotImplementedError(
+                "Snakemake artifact generation currently supports run.mode: cases."
+            )
+        self.write_snakemake_cases_workflow()
+
+    def write_snakemake_cases_workflow(self) -> None:
+        snakefile_path = Path(self.snakefile_path)
+        snakefile_path.parent.mkdir(parents=True, exist_ok=True)
+
+        rule_blocks = []
+        for context in self.cases_context:
+            case_num = context["case_num"]
+            case_id = context["case_id"]
+            rule_blocks.append(
+                "\n".join(
+                    [
+                        f"rule case_{case_num}:",
+                        f"    output: {str(context['done_file'])!r}",
+                        f"    log: stdout={str(context['stdout_log'])!r}, "
+                        f"stderr={str(context['stderr_log'])!r}",
+                        f"    params: case_id={case_id!r}",
+                        "    run:",
+                        "        run_case(CASES[params.case_id])",
+                    ]
+                )
+            )
+
+        done_files = [context["done_file"] for context in self.cases_context]
+        snakefile = "\n\n".join(
+            [
+                self._snakemake_cases_prelude(),
+                "rule all:\n"
+                f"    input: {done_files!r}",
+                *rule_blocks,
+            ]
+        )
+        snakefile_path.write_text(snakefile + "\n")
+        self.logger.debug("Snakefile saved to %s", snakefile_path)
+
+    def _snakemake_cases_prelude(self) -> str:
+        layout = self.cases_config.layout
+        return f'''import csv
+import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
+
+MANIFEST = Path({str(Path(self.manifest_path).resolve())!r})
+LAYOUT = {layout!r}
+CASES = {{}}
+with MANIFEST.open(newline="") as f:
+    reader = csv.DictReader(f, delimiter="\\t")
+    for row in reader:
+        CASES[row["case_id"]] = row
+
+
+def append_status(row, status, message):
+    status_file = Path(row["status_file"])
+    status_file.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(UTC).isoformat()
+    if LAYOUT == "directories":
+        fieldnames = ["timestamp", "status", "message"]
+        status_row = {{
+            "timestamp": timestamp,
+            "status": status,
+            "message": message,
+        }}
+    else:
+        fieldnames = ["timestamp", "case_id", "status", "message"]
+        status_row = {{
+            "timestamp": timestamp,
+            "case_id": row["case_id"],
+            "status": status,
+            "message": message,
+        }}
+
+    write_header = not status_file.exists()
+    with status_file.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\\t")
+        if write_header:
+            writer.writeheader()
+        writer.writerow(status_row)
+
+
+def run_case(row):
+    done_file = Path(row["done_file"])
+    stdout_log = Path(row["stdout_log"])
+    stderr_log = Path(row["stderr_log"])
+    done_file.parent.mkdir(parents=True, exist_ok=True)
+    stdout_log.parent.mkdir(parents=True, exist_ok=True)
+    stderr_log.parent.mkdir(parents=True, exist_ok=True)
+    if done_file.exists():
+        done_file.unlink()
+
+    append_status(row, "STARTED", "")
+    with stdout_log.open("w") as stdout, stderr_log.open("w") as stderr:
+        result = subprocess.run(
+            row["command"],
+            shell=True,
+            cwd=row["case_dir"],
+            stdout=stdout,
+            stderr=stderr,
+            text=True,
+        )
+
+    if result.returncode == 0:
+        append_status(row, "DONE", "exit_code=0")
+        done_file.touch()
+        return
+
+    append_status(row, "FAILED", f"exit_code={{result.returncode}}")
+    raise subprocess.CalledProcessError(result.returncode, row["command"])
+'''
+
     def run_cases(
         self,
         cases: list[int] | None = None,
         progress: Callable[[str, dict, int, int], None] | None = None,
     ) -> None:
+        if self.run_config.backend == "snakemake":
+            self.run_cases_snakemake(cases=cases)
+            return
+
         if self.run_config.backend != "local":
             raise NotImplementedError(
                 f"run.backend: {self.run_config.backend} is not implemented yet."
@@ -503,22 +641,56 @@ class Galerna:
             if progress:
                 progress("done", context, position, total)
 
-    def _ensure_cases_built(self, contexts: list[dict]) -> None:
-        if self.cases_config.layout == "shared":
-            if (
-                not Path(self.output_dir).exists()
-                or not Path(self.manifest_path).exists()
-            ):
-                self.build_cases()
-            return
+    def run_cases_snakemake(self, cases: list[int] | None = None) -> None:
+        if self.run_config.mode != "cases":
+            raise NotImplementedError(
+                "run.backend: snakemake currently supports run.mode: cases."
+            )
+        if self.run_config.executor != "local":
+            raise NotImplementedError(
+                "run.backend: snakemake currently supports run.executor: local."
+            )
 
+        contexts_to_run = self._select_contexts(cases)
+        self._ensure_cases_built(contexts_to_run)
+        self.write_workflow_artifacts()
+
+        workflow_file = self._snakemake_workflow_file()
+        targets = [context["done_file"] for context in contexts_to_run]
+        command = [
+            "snakemake",
+            "--snakefile",
+            workflow_file,
+            "--cores",
+            str(self.run_config.cores),
+            "--rerun-incomplete",
+            *targets,
+        ]
+        self.logger.debug("Running Snakemake command: %s", shlex.join(command))
+        subprocess.run(command, check=True)
+
+    def _snakemake_workflow_file(self) -> str:
+        if self.run_config.workflow.source == "user":
+            if self.run_config.workflow.file is None:
+                raise ValueError("run.workflow.file is required for user workflows.")
+            return self.run_config.workflow.file
+        return self.snakefile_path
+
+    def _ensure_cases_built(self, contexts: list[dict]) -> None:
         unbuilt_cases = [
             context["case_num"]
             for context in contexts
-            if not Path(context["case_dir"]).exists()
+            if self._case_needs_build(context)
         ]
         if unbuilt_cases or not Path(self.manifest_path).exists():
             self.build_cases(cases=unbuilt_cases)
+
+    def _case_needs_build(self, context: dict) -> bool:
+        if self.cases_config.layout == "directories" and not Path(
+            context["case_dir"]
+        ).exists():
+            return True
+        return self._latest_status(context, execution=True) is None
 
     def _run_case_local(self, context: dict) -> None:
         command = context["command_cmd"]

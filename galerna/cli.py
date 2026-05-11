@@ -89,6 +89,8 @@ def _display_path(path: str | Path) -> str:
 
 def _print_run_artifacts(wrapper: Galerna) -> None:
     output_dir = _display_path(wrapper.output_dir)
+    if wrapper.run_config.backend == "snakemake":
+        print(f"Snakefile: {_display_path(wrapper.snakefile_path)}")
     if wrapper.cases_config.layout == "shared":
         print(f"Logs: {output_dir}/.galerna/logs/<case_id>.out, <case_id>.err")
         print(f"Status: {output_dir}/.galerna/status/")
@@ -224,7 +226,14 @@ def main():
 
     if args.action == "run":
         contexts_to_run = wrapper._select_contexts(cases_list)
-        print(f"Running {len(contexts_to_run)} case(s) locally, sequentially")
+        if wrapper.run_config.backend == "snakemake":
+            print(
+                f"Running {len(contexts_to_run)} case(s) with Snakemake "
+                f"executor={wrapper.run_config.executor}, "
+                f"cores={wrapper.run_config.cores}"
+            )
+        else:
+            print(f"Running {len(contexts_to_run)} case(s) locally, sequentially")
         try:
             wrapper.run_cases(
                 cases=cases_list,

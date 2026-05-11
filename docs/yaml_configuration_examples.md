@@ -255,13 +255,16 @@ runs/
     cases.tsv
     Snakefile
     done/
-      cases.done
+      case_0000.done
+      case_0001.done
     logs/
       case_0000.out
       case_0000.err
     status/
       status_cases.tsv
 ```
+
+For `run.backend: snakemake` with `run.mode: cases`, shared layout keeps one status file for the cases group but uses one `.galerna/done/<case_id>.done` marker per case. Snakemake needs a distinct technical output for each case rule.
 
 Avoid commands like this in shared layout:
 

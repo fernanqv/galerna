@@ -212,6 +212,43 @@ bulk 0003 -> cases 0096-0127 -> 16 cores
 
 Inside each bulk job, Galerna's generated Snakemake rule can execute up to `cpus_per_task` case commands concurrently.
 
+## 4b. Snakemake Local Bulk For Development
+
+Bulk mode also works with the local Snakemake executor, but it is mainly useful for testing and debugging bulk behavior before moving to SLURM. For normal local execution, prefer `run.mode: cases`.
+
+```yaml
+templates_dir: "templates"
+output_dir: "runs"
+mode: "one_by_one"
+
+cases:
+  layout: directories
+
+variable_parameters:
+  station: [1, 2, 3, 4]
+
+command: "python run_model.py {{station}}"
+
+run:
+  backend: snakemake
+  mode: bulk
+  executor: local
+  tasks_per_job: 2
+  cpus_per_task: 2
+  cores: 2
+  workflow:
+    source: generated
+```
+
+With this configuration, Galerna generates two bulk rules:
+
+```text
+bulk_0000 -> cases 0000-0001
+bulk_0001 -> cases 0002-0003
+```
+
+`galerna run --cases` must select complete bulk groups. For example, `--cases 0-1` is valid when `tasks_per_job: 2`, but `--cases 1` is rejected because it would only select part of `bulk_0000`.
+
 ## 5. Shared Layout To Reduce Inode Use
 
 Use this when the filesystem has strict inode limits and creating one folder per case is too expensive.
@@ -465,8 +502,12 @@ For shared bulk execution, prefer one status file per bulk group instead of one 
 Technical done markers depend on the layout and execution mode:
 
 ```text
-directory layout:
+directory layout, local backend or snakemake cases:
   runs/0000/.galerna.done
+
+directory layout, snakemake bulk:
+  runs/.galerna/done/bulk_0000.done
+  runs/.galerna/done/bulk_0001.done
 
 shared layout, local backend:
   runs/.galerna/done/cases.done

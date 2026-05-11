@@ -32,6 +32,32 @@ def test_snakemake_cases_build_writes_generated_snakefile(tmp_path):
     assert "run_case(CASES[params.case_id])" in content
 
 
+def test_snakemake_bulk_build_writes_generated_snakefile(tmp_path):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1, 2, 3, 4]},
+        command="echo {{station}}",
+        run={
+            "backend": "snakemake",
+            "mode": "bulk",
+            "executor": "local",
+            "tasks_per_job": 2,
+            "cpus_per_task": 2,
+        },
+    )
+
+    wrapper.build_cases()
+
+    snakefile = output_dir / ".galerna" / "Snakefile"
+    content = snakefile.read_text()
+    assert "rule bulk_0000:" in content
+    assert "rule bulk_0001:" in content
+    assert "threads: 2" in content
+    assert "run_bulk(params.case_ids, output[0], threads)" in content
+    assert str(output_dir / ".galerna" / "done" / "bulk_0000.done") in content
+
+
 @pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not found")
 def test_snakemake_cases_local_executor_runs_selected_cases(tmp_path):
     output_dir = tmp_path / "output"
@@ -97,3 +123,58 @@ def test_snakemake_cases_shared_layout_uses_case_done_and_group_status(tmp_path)
         ("0000", "STARTED"),
         ("0000", "DONE"),
     ]
+
+
+@pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not found")
+def test_snakemake_bulk_local_executor_runs_complete_group(tmp_path):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1, 2, 3, 4]},
+        command=(
+            "python -c 'from pathlib import Path; "
+            'Path(\"result_{{case_id}}.txt\").write_text(\"{{station}}\")\''
+        ),
+        run={
+            "backend": "snakemake",
+            "mode": "bulk",
+            "executor": "local",
+            "tasks_per_job": 2,
+            "cpus_per_task": 2,
+            "cores": 2,
+        },
+    )
+
+    wrapper.run_cases(cases=[0, 1])
+
+    assert (output_dir / "0000" / "result_0000.txt").read_text() == "1"
+    assert (output_dir / "0001" / "result_0001.txt").read_text() == "2"
+    assert not (output_dir / "0002" / "result_0002.txt").exists()
+    assert (output_dir / ".galerna" / "done" / "bulk_0000.done").is_file()
+    assert not (output_dir / ".galerna" / "done" / "bulk_0001.done").exists()
+
+    statuses = wrapper.status_cases()
+    assert [row["status"] for row in statuses] == [
+        "DONE",
+        "DONE",
+        "NOT_BUILT",
+        "NOT_BUILT",
+    ]
+
+
+def test_snakemake_bulk_rejects_partial_case_group(tmp_path):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1, 2, 3, 4]},
+        command="echo {{station}}",
+        run={
+            "backend": "snakemake",
+            "mode": "bulk",
+            "executor": "local",
+            "tasks_per_job": 2,
+        },
+    )
+
+    with pytest.raises(ValueError, match="complete case groups"):
+        wrapper.run_cases(cases=[1])

@@ -243,6 +243,9 @@ def main():
             print(f"\nFailed with exit code {exc.returncode}")
             _print_run_artifacts(wrapper)
             sys.exit(exc.returncode or 1)
+        except (NotImplementedError, ValueError) as exc:
+            print(f"\nError: {exc}")
+            sys.exit(2)
 
         print(f"\nCompleted {len(contexts_to_run)}/{len(contexts_to_run)} case(s)")
         _print_run_artifacts(wrapper)

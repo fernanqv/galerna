@@ -228,6 +228,12 @@ class Galerna:
         if self.run_config.mode not in {"cases", "bulk"}:
             raise ValueError("run.mode must be 'cases' or 'bulk'.")
 
+        if self.run_config.tasks_per_job < 1:
+            raise ValueError("run.tasks_per_job must be greater than or equal to 1.")
+
+        if self.run_config.cpus_per_task < 1:
+            raise ValueError("run.cpus_per_task must be greater than or equal to 1.")
+
         if self.run_config.executor not in {"local", "slurm"}:
             raise ValueError("run.executor must be 'local' or 'slurm'.")
 
@@ -350,18 +356,27 @@ class Galerna:
         case_id = context["case_id"]
         case_dir = Path(context["case_dir"])
         galerna_dir = Path(self.galerna_dir).resolve()
+        status_group = self._status_group_for_context(context)
 
         if self.cases_config.layout == "directories":
             context["stdout_log"] = str(case_dir / "galerna.out")
             context["stderr_log"] = str(case_dir / "galerna.err")
             context["status_file"] = str(case_dir / "galerna.status")
-            context["done_file"] = str(case_dir / ".galerna.done")
-            context["status_group"] = case_id
+            context["status_group"] = status_group
+            if (
+                self.run_config.backend == "snakemake"
+                and self.run_config.mode == "bulk"
+            ):
+                context["done_file"] = str(
+                    galerna_dir / "done" / f"{status_group}.done"
+                )
+            else:
+                context["done_file"] = str(case_dir / ".galerna.done")
             return
 
         context["stdout_log"] = str(galerna_dir / "logs" / f"{case_id}.out")
         context["stderr_log"] = str(galerna_dir / "logs" / f"{case_id}.err")
-        context["status_group"] = self._status_group_for_shared_layout(context)
+        context["status_group"] = status_group
         context["status_file"] = str(
             galerna_dir / "status" / f"status_{context['status_group']}.tsv"
         )
@@ -370,9 +385,11 @@ class Galerna:
             galerna_dir / "done" / f"{done_group}.done"
         )
 
-    def _status_group_for_shared_layout(self, context: dict) -> str:
+    def _status_group_for_context(self, context: dict) -> str:
         if self.run_config.mode != "bulk":
-            return "cases"
+            if self.cases_config.layout == "shared":
+                return "cases"
+            return context["case_id"]
         group_num = context["case_num"] // self.run_config.tasks_per_job
         return f"bulk_{group_num:04d}"
 
@@ -497,11 +514,16 @@ class Galerna:
             return
         if self.run_config.workflow.source == "user":
             return
-        if self.run_config.mode != "cases":
-            raise NotImplementedError(
-                "Snakemake artifact generation currently supports run.mode: cases."
-            )
-        self.write_snakemake_cases_workflow()
+        if self.run_config.mode == "cases":
+            self.write_snakemake_cases_workflow()
+            return
+        if self.run_config.mode == "bulk":
+            self.write_snakemake_bulk_workflow()
+            return
+        raise NotImplementedError(
+            f"Snakemake artifact generation does not support run.mode: "
+            f"{self.run_config.mode}."
+        )
 
     def write_snakemake_cases_workflow(self) -> None:
         snakefile_path = Path(self.snakefile_path)
@@ -537,20 +559,67 @@ class Galerna:
         snakefile_path.write_text(snakefile + "\n")
         self.logger.debug("Snakefile saved to %s", snakefile_path)
 
+    def write_snakemake_bulk_workflow(self) -> None:
+        snakefile_path = Path(self.snakefile_path)
+        snakefile_path.parent.mkdir(parents=True, exist_ok=True)
+
+        rule_blocks = []
+        for group_id, group_contexts in self._bulk_groups().items():
+            case_ids = [context["case_id"] for context in group_contexts]
+            done_file = group_contexts[0]["done_file"]
+            rule_blocks.append(
+                "\n".join(
+                    [
+                        f"rule {group_id}:",
+                        f"    output: {str(done_file)!r}",
+                        f"    threads: {self.run_config.cpus_per_task}",
+                        f"    params: case_ids={case_ids!r}",
+                        "    run:",
+                        "        run_bulk(params.case_ids, output[0], threads)",
+                    ]
+                )
+            )
+
+        done_files = [
+            group_contexts[0]["done_file"]
+            for group_contexts in self._bulk_groups().values()
+        ]
+        snakefile = "\n\n".join(
+            [
+                self._snakemake_cases_prelude(),
+                self._snakemake_bulk_prelude(),
+                "rule all:\n"
+                f"    input: {done_files!r}",
+                *rule_blocks,
+            ]
+        )
+        snakefile_path.write_text(snakefile + "\n")
+        self.logger.debug("Snakefile saved to %s", snakefile_path)
+
     def _snakemake_cases_prelude(self) -> str:
         layout = self.cases_config.layout
         return f'''import csv
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
 MANIFEST = Path({str(Path(self.manifest_path).resolve())!r})
 LAYOUT = {layout!r}
 CASES = {{}}
+STATUS_LOCKS = {{}}
 with MANIFEST.open(newline="") as f:
     reader = csv.DictReader(f, delimiter="\\t")
     for row in reader:
         CASES[row["case_id"]] = row
+
+
+def status_lock(status_file):
+    status_key = str(status_file)
+    if status_key not in STATUS_LOCKS:
+        STATUS_LOCKS[status_key] = threading.Lock()
+    return STATUS_LOCKS[status_key]
 
 
 def append_status(row, status, message):
@@ -573,15 +642,16 @@ def append_status(row, status, message):
             "message": message,
         }}
 
-    write_header = not status_file.exists()
-    with status_file.open("a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\\t")
-        if write_header:
-            writer.writeheader()
-        writer.writerow(status_row)
+    with status_lock(status_file):
+        write_header = not status_file.exists()
+        with status_file.open("a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\\t")
+            if write_header:
+                writer.writeheader()
+            writer.writerow(status_row)
 
 
-def run_case(row):
+def run_case(row, touch_done=True):
     done_file = Path(row["done_file"])
     stdout_log = Path(row["stdout_log"])
     stderr_log = Path(row["stderr_log"])
@@ -604,11 +674,40 @@ def run_case(row):
 
     if result.returncode == 0:
         append_status(row, "DONE", "exit_code=0")
-        done_file.touch()
+        if touch_done:
+            done_file.touch()
         return
 
     append_status(row, "FAILED", f"exit_code={{result.returncode}}")
     raise subprocess.CalledProcessError(result.returncode, row["command"])
+'''
+
+    def _snakemake_bulk_prelude(self) -> str:
+        return '''
+
+def run_bulk(case_ids, done_file, threads):
+    done_path = Path(done_file)
+    done_path.parent.mkdir(parents=True, exist_ok=True)
+    if done_path.exists():
+        done_path.unlink()
+
+    workers = max(1, int(threads))
+    errors = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(run_case, CASES[case_id], False)
+            for case_id in case_ids
+        ]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except subprocess.CalledProcessError as exc:
+                errors.append(exc)
+
+    if errors:
+        raise errors[0]
+
+    done_path.touch()
 '''
 
     def run_cases(
@@ -642,13 +741,14 @@ def run_case(row):
                 progress("done", context, position, total)
 
     def run_cases_snakemake(self, cases: list[int] | None = None) -> None:
-        if self.run_config.mode != "cases":
-            raise NotImplementedError(
-                "run.backend: snakemake currently supports run.mode: cases."
-            )
         if self.run_config.executor != "local":
             raise NotImplementedError(
                 "run.backend: snakemake currently supports run.executor: local."
+            )
+        if self.run_config.mode not in {"cases", "bulk"}:
+            raise NotImplementedError(
+                f"run.backend: snakemake does not support run.mode: "
+                f"{self.run_config.mode}."
             )
 
         contexts_to_run = self._select_contexts(cases)
@@ -656,7 +756,7 @@ def run_case(row):
         self.write_workflow_artifacts()
 
         workflow_file = self._snakemake_workflow_file()
-        targets = [context["done_file"] for context in contexts_to_run]
+        targets = self._snakemake_targets(contexts_to_run, cases)
         command = [
             "snakemake",
             "--snakefile",
@@ -668,6 +768,51 @@ def run_case(row):
         ]
         self.logger.debug("Running Snakemake command: %s", shlex.join(command))
         subprocess.run(command, check=True)
+
+    def _snakemake_targets(
+        self, contexts_to_run: list[dict], cases: list[int] | None
+    ) -> list[str]:
+        if self.run_config.mode == "cases":
+            return [context["done_file"] for context in contexts_to_run]
+
+        selected_groups = self._validate_bulk_selection(cases)
+        return [
+            group_contexts[0]["done_file"]
+            for group_id, group_contexts in self._bulk_groups().items()
+            if group_id in selected_groups
+        ]
+
+    def _validate_bulk_selection(self, cases: list[int] | None) -> set[str]:
+        groups = self._bulk_groups()
+        if cases is None:
+            return set(groups)
+
+        selected_cases = set(cases)
+        selected_groups = set()
+        partial_groups = []
+        for group_id, group_contexts in groups.items():
+            group_cases = {context["case_num"] for context in group_contexts}
+            overlap = selected_cases & group_cases
+            if not overlap:
+                continue
+            if overlap != group_cases:
+                expected = ",".join(str(case) for case in sorted(group_cases))
+                partial_groups.append(f"{group_id} ({expected})")
+            selected_groups.add(group_id)
+
+        if partial_groups:
+            groups_str = "; ".join(partial_groups)
+            raise ValueError(
+                "Snakemake bulk runs require complete case groups. "
+                f"Select full groups: {groups_str}."
+            )
+        return selected_groups
+
+    def _bulk_groups(self) -> dict[str, list[dict]]:
+        groups: dict[str, list[dict]] = {}
+        for context in self.cases_context:
+            groups.setdefault(context["status_group"], []).append(context)
+        return groups
 
     def _snakemake_workflow_file(self) -> str:
         if self.run_config.workflow.source == "user":

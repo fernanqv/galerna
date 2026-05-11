@@ -121,3 +121,16 @@ galerna status
 ```
 
 Outputs must include `case_id` or another unique value because all cases run from the same `runs/` directory.
+
+### 08 Snakemake Local Bulk
+
+Uses `run.mode: bulk` with `executor: local`. This is mainly a development and debugging example for bulk execution before using SLURM.
+
+```bash
+cd examples/08_snakemake_local_bulk
+galerna build
+galerna run
+galerna status
+```
+
+For normal local execution, prefer `run.mode: cases`.

@@ -245,6 +245,37 @@ def test_cli_status_shows_latest_human_and_execution_status(tmp_path):
     assert "QC_OK" not in execution_result.stdout
 
 
+def test_cli_run_reports_bulk_partial_group_error_without_traceback(tmp_path):
+    config_path = tmp_path / "galerna.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "output_dir: output",
+                "variable_parameters:",
+                "  station: [1, 2]",
+                'command: "echo {{station}}"',
+                "run:",
+                "  backend: snakemake",
+                "  mode: bulk",
+                "  executor: local",
+                "  tasks_per_job: 2",
+            ]
+        )
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "galerna.cli", "run", "--cases", "1"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Error: Snakemake bulk runs require complete case groups" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
 def test_cli_rejects_all_action():
     result = subprocess.run(
         [sys.executable, "-m", "galerna.cli", "all"],

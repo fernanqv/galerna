@@ -1,13 +1,22 @@
-# Galerna Local Backend Examples
+# Galerna Examples
 
-These examples exercise the first clean Galerna execution path:
+These examples exercise Galerna's first clean execution paths:
 
 ```yaml
 run:
   backend: local
 ```
 
-Local execution is sequential. It is intended for debugging and simple runs, not for parallel execution.
+and:
+
+```yaml
+run:
+  backend: snakemake
+  mode: cases
+  executor: local
+```
+
+Direct local execution is sequential. Snakemake local execution can run multiple case tasks concurrently using `run.cores`.
 
 Run any example from its own folder:
 
@@ -71,7 +80,10 @@ galerna run
 
 Uses `wrapper.code` and `wrapper.class` to add custom Python logic in `build_case`.
 
-This example documents the intended YAML interface. It will run once `wrapper:` support is implemented in the CLI.
+```bash
+cd examples/04_custom_build_hook
+galerna run
+```
 
 ### 05 Failure Status
 
@@ -83,3 +95,16 @@ galerna run
 ```
 
 The command exits with an error by design.
+
+### 06 Snakemake Local Cases
+
+Uses `run.backend: snakemake` with one Snakemake task per Galerna case.
+
+```bash
+cd examples/06_snakemake_local_cases
+galerna build
+galerna run
+galerna status
+```
+
+This example generates `runs/.galerna/Snakefile` and runs up to two cases at the same time with `cores: 2`.

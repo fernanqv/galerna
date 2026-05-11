@@ -3,8 +3,10 @@ import itertools
 import logging
 import os
 import re
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -468,7 +470,138 @@ class Galerna:
         self.logger.info("Cases manifest saved to %s", manifest_path)
 
     def run_cases(self, cases: list[int] | None = None) -> None:
-        raise NotImplementedError("run_cases will be implemented in the next phase.")
+        if self.run_config.backend != "local":
+            raise NotImplementedError(
+                f"run.backend: {self.run_config.backend} is not implemented yet."
+            )
+
+        contexts_to_run = self._select_contexts(cases)
+        self._ensure_cases_built(contexts_to_run)
+
+        for context in contexts_to_run:
+            self._run_case_local(context)
+
+    def _ensure_cases_built(self, contexts: list[dict]) -> None:
+        if self.cases_config.layout == "shared":
+            if (
+                not Path(self.output_dir).exists()
+                or not Path(self.manifest_path).exists()
+            ):
+                self.build_cases()
+            return
+
+        unbuilt_cases = [
+            context["case_num"]
+            for context in contexts
+            if not Path(context["case_dir"]).exists()
+        ]
+        if unbuilt_cases or not Path(self.manifest_path).exists():
+            self.build_cases(cases=unbuilt_cases)
+
+    def _run_case_local(self, context: dict) -> None:
+        command = context["command_cmd"]
+        if not command:
+            raise ValueError("command is required to run cases locally.")
+
+        case_dir = Path(context["case_dir"])
+        stdout_log = Path(context["stdout_log"])
+        stderr_log = Path(context["stderr_log"])
+        done_file = Path(context["done_file"])
+
+        stdout_log.parent.mkdir(parents=True, exist_ok=True)
+        stderr_log.parent.mkdir(parents=True, exist_ok=True)
+        done_file.parent.mkdir(parents=True, exist_ok=True)
+        self._remove_done_marker(context)
+
+        self._append_status(context, "STARTED", "")
+        self.logger.info(
+            "Running case %s in %s with command=%s",
+            context["case_id"],
+            case_dir,
+            command,
+        )
+
+        with stdout_log.open("w") as stdout, stderr_log.open("w") as stderr:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=case_dir,
+                stdout=stdout,
+                stderr=stderr,
+                text=True,
+            )
+
+        if result.returncode == 0:
+            self._append_status(context, "DONE", "exit_code=0")
+            self._mark_done(context)
+            return
+
+        self._append_status(context, "FAILED", f"exit_code={result.returncode}")
+        raise subprocess.CalledProcessError(result.returncode, command)
+
+    def _append_status(self, context: dict, status: str, message: str) -> None:
+        status_file = Path(context["status_file"])
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).isoformat()
+
+        if self.cases_config.layout == "directories":
+            fieldnames = ["timestamp", "status", "message"]
+            row = {
+                "timestamp": timestamp,
+                "status": status,
+                "message": message,
+            }
+        else:
+            fieldnames = ["timestamp", "case_id", "status", "message"]
+            row = {
+                "timestamp": timestamp,
+                "case_id": context["case_id"],
+                "status": status,
+                "message": message,
+            }
+
+        write_header = not status_file.exists()
+        with status_file.open("a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
+
+    def _remove_done_marker(self, context: dict) -> None:
+        done_file = Path(context["done_file"])
+        if done_file.exists():
+            done_file.unlink()
+
+    def _mark_done(self, context: dict) -> None:
+        if self.cases_config.layout == "directories":
+            Path(context["done_file"]).touch()
+            return
+
+        if self._all_group_cases_done(context["status_group"]):
+            Path(context["done_file"]).touch()
+
+    def _all_group_cases_done(self, status_group: str) -> bool:
+        group_contexts = [
+            context
+            for context in self.cases_context
+            if context["status_group"] == status_group
+        ]
+        return all(self._latest_status(context) == "DONE" for context in group_contexts)
+
+    def _latest_status(self, context: dict) -> str | None:
+        status_file = Path(context["status_file"])
+        if not status_file.exists():
+            return None
+
+        latest_status = None
+        with status_file.open(newline="") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                if self.cases_config.layout == "shared":
+                    if row.get("case_id") != context["case_id"]:
+                        continue
+                latest_status = row.get("status")
+        return latest_status
 
     def postprocess_case(self, case_context: dict, **kwargs) -> None:
         raise NotImplementedError("The method postprocess_case must be implemented.")

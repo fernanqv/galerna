@@ -1,6 +1,7 @@
 .DS_Store
 **/.DS_Store
 **/.snakemake/
+examples/**/runs/
 
 __pycache__/
 *.py[cod]

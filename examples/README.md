@@ -108,3 +108,16 @@ galerna status
 ```
 
 This example generates `runs/.galerna/Snakefile` and runs up to two cases at the same time with `cores: 2`.
+
+### 07 Snakemake Shared Cases
+
+Uses `cases.layout: shared` with `run.backend: snakemake`. This avoids one directory per case and keeps status grouped under `runs/.galerna/status/`.
+
+```bash
+cd examples/07_snakemake_shared_cases
+galerna build
+galerna run
+galerna status
+```
+
+Outputs must include `case_id` or another unique value because all cases run from the same `runs/` directory.

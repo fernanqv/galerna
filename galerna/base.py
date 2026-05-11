@@ -16,6 +16,7 @@ from .utils import copy_files, get_simple_logger
 
 DEFAULT_CASE_ID_FORMAT = '{{ "%04d" | format(case_num) }}'
 DEBUG_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+EXECUTION_STATUSES = {"STARTED", "DONE", "FAILED", "SKIPPED"}
 
 
 @dataclass
@@ -605,22 +606,89 @@ class Galerna:
             for context in self.cases_context
             if context["status_group"] == status_group
         ]
-        return all(self._latest_status(context) == "DONE" for context in group_contexts)
+        return all(
+            self._latest_status(context, execution=True) == "DONE"
+            for context in group_contexts
+        )
 
-    def _latest_status(self, context: dict) -> str | None:
+    def _latest_status_row(
+        self, context: dict, execution: bool = False
+    ) -> dict[str, str] | None:
         status_file = Path(context["status_file"])
         if not status_file.exists():
             return None
 
-        latest_status = None
+        latest_row = None
         with status_file.open(newline="") as f:
             reader = csv.DictReader(f, delimiter="\t")
             for row in reader:
                 if self.cases_config.layout == "shared":
                     if row.get("case_id") != context["case_id"]:
                         continue
-                latest_status = row.get("status")
-        return latest_status
+                if execution and row.get("status") not in EXECUTION_STATUSES:
+                    continue
+                latest_row = row
+        return latest_row
+
+    def _latest_status(self, context: dict, execution: bool = False) -> str | None:
+        latest_row = self._latest_status_row(context, execution=execution)
+        if latest_row is None:
+            return None
+        return latest_row.get("status")
+
+    def _status_contexts(self, cases: list[int] | None = None) -> list[dict]:
+        if not Path(self.manifest_path).exists():
+            return self._select_contexts(cases)
+
+        with Path(self.manifest_path).open(newline="") as f:
+            contexts = list(csv.DictReader(f, delimiter="\t"))
+
+        for context in contexts:
+            context["case_num"] = int(context["case_num"])
+
+        if cases is None:
+            return contexts
+
+        selected_cases = set(cases)
+        selected_contexts = [
+            context for context in contexts if context["case_num"] in selected_cases
+        ]
+        found_cases = {context["case_num"] for context in selected_contexts}
+        missing_cases = selected_cases - found_cases
+        if missing_cases:
+            missing = ", ".join(str(case) for case in sorted(missing_cases))
+            raise IndexError(f"Case index not found in manifest: {missing}")
+        return selected_contexts
+
+    def status_cases(
+        self, cases: list[int] | None = None, execution: bool = False
+    ) -> list[dict[str, str]]:
+        contexts_to_check = self._status_contexts(cases)
+        statuses = []
+        for context in contexts_to_check:
+            latest_row = self._latest_status_row(context, execution=execution)
+            if latest_row is None:
+                statuses.append(
+                    {
+                        "case_id": context["case_id"],
+                        "status": "PENDING",
+                        "timestamp": "",
+                        "message": "",
+                        "done": "yes" if Path(context["done_file"]).exists() else "no",
+                    }
+                )
+                continue
+
+            statuses.append(
+                {
+                    "case_id": context["case_id"],
+                    "status": latest_row.get("status", ""),
+                    "timestamp": latest_row.get("timestamp", ""),
+                    "message": latest_row.get("message", ""),
+                    "done": "yes" if Path(context["done_file"]).exists() else "no",
+                }
+            )
+        return statuses
 
     def postprocess_case(self, case_context: dict, **kwargs) -> None:
         raise NotImplementedError("The method postprocess_case must be implemented.")
@@ -643,7 +711,3 @@ class Galerna:
             )
             results.append(result)
         return results
-
-    def status_cases(self, cases: list[int] | None = None) -> dict[str, str]:
-        contexts_to_check = self._select_contexts(cases)
-        return {context["case_id"]: "PENDING" for context in contexts_to_check}

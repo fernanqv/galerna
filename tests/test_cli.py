@@ -199,6 +199,52 @@ def test_cli_debug_enables_internal_debug_logging(tmp_path):
     )
 
 
+def test_cli_status_shows_latest_human_and_execution_status(tmp_path):
+    config_path = tmp_path / "galerna.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "output_dir: output",
+                "variable_parameters:",
+                "  station: [1]",
+                'command: "echo {{station}}"',
+            ]
+        )
+    )
+
+    subprocess.run(
+        [sys.executable, "-m", "galerna.cli", "run"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    status_file = tmp_path / "output" / "0000" / "galerna.status"
+    with status_file.open("a") as f:
+        f.write("2026-05-11T10:00:00+00:00\tQC_OK\tchecked\n")
+
+    human_result = subprocess.run(
+        [sys.executable, "-m", "galerna.cli", "status"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    execution_result = subprocess.run(
+        [sys.executable, "-m", "galerna.cli", "status", "--execution"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "case_id" in human_result.stdout
+    assert "QC_OK" in human_result.stdout
+    assert "checked" in human_result.stdout
+    assert "DONE" in execution_result.stdout
+    assert "QC_OK" not in execution_result.stdout
+
+
 def test_cli_rejects_all_action():
     result = subprocess.run(
         [sys.executable, "-m", "galerna.cli", "all"],

@@ -478,7 +478,7 @@ Suggested status logic for `galerna status`:
 - `RUNNING`: latest status line is `STARTED` or another active custom status.
 - `PENDING`: no status line exists for the case.
 
-A future `galerna status` can expose both views:
+`galerna status` exposes both views:
 
 - default: latest human status, including custom user statuses;
-- execution/technical view: latest Galerna-reserved execution status, ignoring later custom statuses.
+- `galerna status --execution`: latest Galerna-reserved execution status, ignoring later custom statuses.

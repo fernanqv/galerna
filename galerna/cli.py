@@ -98,6 +98,27 @@ def _print_run_artifacts(wrapper: Galerna) -> None:
     print(f"Status: {output_dir}/<case_id>/galerna.status")
 
 
+def _print_status_table(statuses: list[dict[str, str]]) -> None:
+    columns = ["case_id", "status", "done", "timestamp", "message"]
+    widths = {
+        column: max(
+            len(column),
+            *(len(str(row.get(column, ""))) for row in statuses),
+        )
+        for column in columns
+    }
+
+    print("  ".join(column.ljust(widths[column]) for column in columns))
+    print("  ".join("-" * widths[column] for column in columns))
+    for row in statuses:
+        print(
+            "  ".join(
+                str(row.get(column, "")).ljust(widths[column])
+                for column in columns
+            )
+        )
+
+
 def _run_progress(verbose: bool):
     def report(event: str, context: dict, position: int, total: int) -> None:
         case_id = context["case_id"]
@@ -150,6 +171,11 @@ def main():
         "--debug",
         action="store_true",
         help="Show internal Galerna debug logs with timestamps.",
+    )
+    parser.add_argument(
+        "--execution",
+        action="store_true",
+        help="For status, show the latest Galerna execution status only.",
     )
 
     args = parser.parse_args()
@@ -217,12 +243,10 @@ def main():
         wrapper.postprocess_cases(cases=cases_list)
 
     if args.action == "status":
-        if hasattr(wrapper, "status_cases"):
-            print("Checking status of cases...")
-            status_result = wrapper.status_cases(cases=cases_list)
-            print(status_result)
-        else:
-            print("Status action not supported by this wrapper class.")
+        status_result = wrapper.status_cases(
+            cases=cases_list, execution=args.execution
+        )
+        _print_status_table(status_result)
 
 
 if __name__ == "__main__":

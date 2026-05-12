@@ -1,0 +1,19 @@
+templates_dir: "templates"
+output_dir: "runs"
+mode: "all_combinations"
+
+cases:
+  layout: directories
+  id_format: "station_{{ station }}_{{ compiler }}"
+
+variable_parameters:
+  station: [1, 2]
+  compiler: ["gcc", "intel"]
+
+fixed_parameters:
+  sleep_seconds: 1
+
+command: "python run_case.py"
+
+run:
+  backend: local

@@ -1,0 +1,17 @@
+wrapper:
+  code: "custom_wrapper.py"
+  class: "CustomWrapper"
+
+templates_dir: "templates"
+output_dir: "runs"
+
+cases:
+  layout: directories
+
+variable_parameters:
+  station: [1, 2]
+
+command: "python run_case.py"
+
+run:
+  backend: local

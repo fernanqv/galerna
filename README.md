@@ -108,6 +108,41 @@ run:
 
 For normal local execution, prefer `mode: cases`. Bulk mode groups cases and creates one technical done marker per group.
 
+The three bulk parameters control different levels of concurrency:
+
+- `tasks_per_job`: how many Galerna cases are grouped into one bulk Snakemake job.
+- `cpus_per_task`: how many case commands may run at the same time inside one bulk job.
+- `cores`: how many CPU cores Snakemake may use in total for the current local run.
+
+With the example above and four cases, Galerna creates two bulk jobs:
+
+```text
+bulk_0000 -> cases 0000, 0001
+bulk_0001 -> cases 0002, 0003
+```
+
+Each bulk job can run up to `cpus_per_task: 2` case commands concurrently. Since `cores: 2`, Snakemake will normally run one bulk job at a time locally. This mimics the future SLURM pattern where one submitted job reserves several cores and uses them to run several Galerna cases internally.
+
+For a cluster-like setup such as:
+
+```yaml
+run:
+  backend: snakemake
+  mode: bulk
+  executor: slurm
+  tasks_per_job: 32
+  cpus_per_task: 16
+  max_jobs: 20
+```
+
+the intended meaning is:
+
+- each SLURM job handles 32 Galerna cases;
+- inside that SLURM job, up to 16 case commands can run concurrently;
+- at most 20 Snakemake/SLURM jobs are submitted or active at once.
+
+`executor: slurm` is part of the planned interface; the currently implemented executor is `local`.
+
 ## Layouts
 
 ### Directory Layout

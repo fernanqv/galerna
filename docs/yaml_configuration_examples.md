@@ -1,18 +1,15 @@
 # Galerna YAML Configuration Examples
 
-This document sketches the intended YAML interface for Galerna execution. It is a design guide for the first clean execution architecture, not a guarantee that every field is already implemented.
+This document describes the Galerna v1 YAML interface. It focuses on the implemented execution model:
 
-## Core Ideas
+- `run.backend: local`
+- `run.backend: snakemake`
+- `run.executor: local`
+- `run.executor: slurm`
+- `run.mode: cases`
+- `run.mode: bulk`
 
-Galerna separates case generation from execution:
-
-- `command`: command for one case, rendered with the case context.
-- `cases.layout`: where case commands run.
-- `run.backend`: execution backend used by Galerna.
-- `run.executor`: execution system used by the backend, when relevant.
-- `run.workflow.source`: whether Galerna generates the workflow or the user provides one.
-
-SLURM is not a Galerna backend. Use:
+SLURM is not a Galerna backend. Use Snakemake as the backend and SLURM as the executor:
 
 ```yaml
 run:
@@ -20,16 +17,54 @@ run:
   executor: slurm
 ```
 
-not:
+## Three Independent Choices
+
+A Galerna configuration combines three mostly independent choices.
+
+Case layout:
+
+```yaml
+cases:
+  layout: directories
+```
+
+or:
+
+```yaml
+cases:
+  layout: shared
+```
+
+Input generation:
+
+```yaml
+templates_dir: "templates"
+```
+
+or no templates at all.
+
+Execution:
 
 ```yaml
 run:
-  backend: slurm
+  backend: local
 ```
+
+or:
+
+```yaml
+run:
+  backend: snakemake
+  mode: cases
+  executor: local
+  cores: 4
+```
+
+Templates are optional. Use them when Galerna should render input files before running each case. If the command can use rendered variables directly, or if inputs already exist, omit `templates_dir`.
 
 ## Defaults And Minimal YAML
 
-The simplest valid generated-workflow YAML is:
+The simplest useful YAML is:
 
 ```yaml
 variable_parameters:
@@ -38,7 +73,7 @@ variable_parameters:
 command: "python run_model.py {{station}}"
 ```
 
-It is equivalent to:
+It uses these defaults:
 
 ```yaml
 output_dir: "output"
@@ -46,82 +81,219 @@ mode: "one_by_one"
 
 cases:
   layout: directories
-  id_format: '{{ "%04d" | format(case_num) }}'
-
-variable_parameters:
-  station: [1, 2, 3, 4]
-
-command: "python run_model.py {{station}}"
+  id_format: "{{ '%04d' | format(case_num) }}"
 
 run:
   backend: local
-  mode: cases
-  executor: local
-  cores: 1
-  cpus_per_task: 1
-  tasks_per_job: 1
-  workflow:
-    source: generated
-
-status:
-  mode: auto
 ```
 
-## 1. Direct Local Debug Run
+Direct local execution is sequential. It runs one case at a time.
 
-Use this for debugging and quick checks. Galerna runs cases sequentially, with no local parallelism.
+Galerna looks for `galerna.yaml` in the current directory when `--config` is not provided.
+
+## Variable Parameters
+
+`variable_parameters` defines the cases.
+
+With `mode: one_by_one`, all parameter lists must have the same length:
 
 ```yaml
-templates_dir: "templates"
-output_dir: "runs"
 mode: "one_by_one"
 
-cases:
-  layout: directories
-
 variable_parameters:
-  station: [1, 2, 3, 4]
-
-command: "python ../../../dummy_script.py {{station}}"
-
-run:
-  backend: local
+  station: [1, 2, 3]
+  sleep_seconds: [5, 10, 15]
 ```
 
-Expected behavior:
+This creates three cases:
 
 ```text
-case 0000 finishes
-case 0001 finishes
-case 0002 finishes
-case 0003 finishes
+case 0 -> station=1, sleep_seconds=5
+case 1 -> station=2, sleep_seconds=10
+case 2 -> station=3, sleep_seconds=15
 ```
 
-## 2. Snakemake Local, One Task Per Case
-
-Use this when you want local parallel execution managed by Snakemake.
+You can also use string ranges:
 
 ```yaml
-templates_dir: "templates"
+variable_parameters:
+  station: range(1,101)
+  sleep_seconds: range(1,101)
+```
+
+With `mode: all_combinations`, Galerna creates the Cartesian product:
+
+```yaml
+mode: "all_combinations"
+
+variable_parameters:
+  station: [1, 2]
+  compiler: ["gcc", "intel"]
+```
+
+This creates four cases:
+
+```text
+station=1, compiler=gcc
+station=1, compiler=intel
+station=2, compiler=gcc
+station=2, compiler=intel
+```
+
+Use `fixed_parameters` for values shared by all cases:
+
+```yaml
+fixed_parameters:
+  sleep_seconds: 1
+```
+
+## Directory Layout
+
+`cases.layout: directories` creates one working directory per case. This is the default and the best starting point when a model expects local files in its working directory.
+
+```yaml
 output_dir: "runs"
-mode: "one_by_one"
 
 cases:
   layout: directories
 
 variable_parameters:
-  station: [1, 2, 3, 4, 5, 6, 7, 8]
+  station: [10, 20, 30]
 
-command: "python ../../../dummy_script.py {{station}}"
+command: "python run_model.py --station {{station}}"
+
+run:
+  backend: local
+```
+
+Expected layout after running:
+
+```text
+runs/
+  0000/
+    galerna.out
+    galerna.err
+    galerna.status
+    .galerna.done
+  0001/
+    galerna.out
+    galerna.err
+    galerna.status
+    .galerna.done
+  .galerna/
+    cases.tsv
+```
+
+## Directory Layout With Templates
+
+Templates are useful when each case needs generated input files.
+
+```yaml
+templates_dir: "templates"
+output_dir: "runs"
+mode: "all_combinations"
+
+cases:
+  layout: directories
+  id_format: "station_{{ station }}_{{ compiler }}"
+
+variable_parameters:
+  station: [1, 2]
+  compiler: ["gcc", "intel"]
+
+fixed_parameters:
+  sleep_seconds: 1
+
+command: "python run_case.py"
+
+run:
+  backend: local
+```
+
+For a template file `templates/input.txt`:
+
+```text
+station={{ station }}
+compiler={{ compiler }}
+sleep_seconds={{ sleep_seconds }}
+case_id={{ case_id }}
+```
+
+Galerna renders the template into each case directory before running `command`.
+
+## Shared Layout
+
+`cases.layout: shared` runs all cases from the same `output_dir`. This reduces directory creation and is useful on filesystems with strict inode limits.
+
+```yaml
+output_dir: "runs"
+
+cases:
+  layout: shared
+  id_format: "case_{{ '%04d' | format(case_num) }}"
+
+variable_parameters:
+  station: [100, 200, 300]
+
+command: "python run_model.py --station {{station}} --output result_{{case_id}}.txt"
+
+run:
+  backend: local
+```
+
+Commands in shared layout must write unique output names. Usually that means using `{{case_id}}`.
+
+Avoid:
+
+```yaml
+command: "python run_model.py --output result.txt"
+```
+
+because cases would overwrite each other.
+
+Expected layout:
+
+```text
+runs/
+  result_case_0000.txt
+  result_case_0001.txt
+  .galerna/
+    cases.tsv
+    logs/
+      case_0000.out
+      case_0000.err
+    status/
+      status_cases.tsv
+    done/
+      cases.done
+```
+
+## Snakemake Local Cases
+
+Use Snakemake local execution when you want to run several cases at once on the local machine.
+
+```yaml
+output_dir: "runs"
+mode: "one_by_one"
+
+cases:
+  layout: directories
+  id_format: "case_{{ '%04d' | format(case_num) }}"
+
+variable_parameters:
+  station: [101, 102, 103, 104]
+  sleep_seconds: [1, 1, 1, 1]
+
+command: "python run_model.py --station {{station}}"
 
 run:
   backend: snakemake
   mode: cases
   executor: local
-  cores: 4
-  workflow:
-    source: generated
+  cores: 2
 ```
+
+Each Galerna case becomes one Snakemake task. `cores` is the total local core budget Snakemake may use.
 
 Galerna generates:
 
@@ -130,109 +302,111 @@ runs/.galerna/cases.tsv
 runs/.galerna/Snakefile
 ```
 
-Each Snakemake task runs one case from its case directory.
+The same idea works with shared layout:
 
-## 3. Snakemake SLURM, One Job Per Case
+```yaml
+cases:
+  layout: shared
+
+run:
+  backend: snakemake
+  mode: cases
+  executor: local
+  cores: 2
+```
+
+## Snakemake SLURM Cases
 
 Use this when each case should become a separate SLURM job.
 
 ```yaml
-templates_dir: "templates"
 output_dir: "runs"
 mode: "one_by_one"
 
 cases:
-  layout: directories
+  layout: shared
+  id_format: "case_{{ '%04d' | format(case_num) }}"
 
 variable_parameters:
-  station: [1, 2, 3, 4, 5, 6, 7, 8]
+  station: range(1,17)
+  sleep_seconds: range(1,17)
 
-command: "python ../../../dummy_script.py {{station}}"
+command: "python run_model.py --station {{station}} --output result_{{case_id}}.txt"
 
 run:
   backend: snakemake
   mode: cases
   executor: slurm
-  max_jobs: 20
-  cpus_per_task: 1
+  max_jobs: 16
   partition: "meteo_long"
-  runtime: 30
+  runtime: 10
   mem_mb: 1000
-  workflow:
-    source: generated
 ```
 
 Conceptually:
 
 ```text
-case 0000 -> SLURM job
-case 0001 -> SLURM job
-case 0002 -> SLURM job
+case_0000 -> SLURM job
+case_0001 -> SLURM job
+case_0002 -> SLURM job
 ```
 
-Galerna invokes Snakemake with its SLURM executor. The generated Snakefile uses `threads: cpus_per_task` and resource fields such as `mem_mb`, `runtime`, and `slurm_partition`. `max_jobs` is passed to Snakemake as the maximum number of submitted/active jobs.
+`max_jobs` is passed to Snakemake as the job limit. `partition`, `runtime`, `mem_mb`, and `cpus_per_task` are mapped into Snakemake resources.
 
-## 4. Snakemake SLURM Bulk, 32 Cases Per Job With 16 Cores
+Run this on a system where SLURM and the Snakemake SLURM executor plugin are available.
 
-Use this when a cluster policy requires large jobs, or when submitting one job per case is inefficient.
+## Snakemake SLURM Bulk
+
+Use bulk mode when submitting one job per case is inefficient, or when a cluster policy requires jobs with several cores.
 
 ```yaml
-templates_dir: "templates"
 output_dir: "runs"
 mode: "one_by_one"
 
 cases:
-  layout: directories
+  layout: shared
+  id_format: "case_{{ '%04d' | format(case_num) }}"
 
 variable_parameters:
-  station: "range(1, 129)"
+  station: range(1,101)
+  sleep_seconds: range(1,101)
 
-command: "python ../../../dummy_script.py {{station}}"
+command: "python run_model.py --station {{station}} --output result_{{case_id}}.txt"
 
 run:
   backend: snakemake
   mode: bulk
   executor: slurm
-  tasks_per_job: 32
-  max_jobs: 10
+  tasks_per_job: 16
   cpus_per_task: 16
+  max_jobs: 100
   partition: "meteo_long"
-  runtime: 120
-  mem_mb: 4000
-  workflow:
-    source: generated
+  runtime: 10
+  mem_mb: 1000
 ```
 
 Conceptually:
 
 ```text
-bulk 0000 -> cases 0000-0031 -> 16 cores
-bulk 0001 -> cases 0032-0063 -> 16 cores
-bulk 0002 -> cases 0064-0095 -> 16 cores
-bulk 0003 -> cases 0096-0127 -> 16 cores
+bulk_0000 -> case_0000 ... case_0015
+bulk_0001 -> case_0016 ... case_0031
+...
+bulk_0006 -> case_0096 ... case_0099
 ```
 
-Inside each bulk job, Galerna's generated Snakemake rule can execute up to `cpus_per_task` case commands concurrently.
+The parameters mean:
 
-For this example, Snakemake submits one SLURM job per bulk group. Each bulk job requests 16 cores, then Galerna runs up to 16 case commands inside that job. `max_jobs: 10` limits how many bulk jobs Snakemake may submit or keep active at once.
+- `tasks_per_job`: number of Galerna cases grouped into one Snakemake job.
+- `cpus_per_task`: cores requested by each Snakemake job, and maximum number of case commands Galerna may run concurrently inside that job.
+- `max_jobs`: maximum number of Snakemake jobs submitted or active at once.
 
-## 4b. Snakemake Local Bulk For Development
+With `tasks_per_job: 16` and `cpus_per_task: 16`, each full bulk job runs 16 case commands at the same time inside one SLURM allocation.
 
-Bulk mode also works with the local Snakemake executor, but it is mainly useful for testing and debugging bulk behavior before moving to SLURM. For normal local execution, prefer `run.mode: cases`.
+## Snakemake Local Bulk
+
+Bulk mode also works with `executor: local`, mainly to test the bulk workflow before moving to SLURM. For normal local parallel execution, prefer `mode: cases`.
 
 ```yaml
-templates_dir: "templates"
-output_dir: "runs"
-mode: "one_by_one"
-
-cases:
-  layout: directories
-
-variable_parameters:
-  station: [1, 2, 3, 4]
-
-command: "python run_model.py {{station}}"
-
 run:
   backend: snakemake
   mode: bulk
@@ -240,144 +414,86 @@ run:
   tasks_per_job: 2
   cpus_per_task: 2
   cores: 2
-  workflow:
-    source: generated
 ```
 
-With this configuration, Galerna generates two bulk rules:
+With four cases:
 
 ```text
-bulk_0000 -> cases 0000-0001
-bulk_0001 -> cases 0002-0003
+bulk_0000 -> cases 0000, 0001
+bulk_0001 -> cases 0002, 0003
 ```
 
-`galerna run --cases` must select complete bulk groups. For example, `--cases 0-1` is valid when `tasks_per_job: 2`, but `--cases 1` is rejected because it would only select part of `bulk_0000`.
-
-## 5. Shared Layout To Reduce Inode Use
-
-Use this when the filesystem has strict inode limits and creating one folder per case is too expensive.
-
-In shared layout:
-
-- all commands run from `output_dir`;
-- Galerna does not render per-case templates;
-- the user command must create unique output names using `case_id`, `case_num`, or other parameters;
-- logs and status files are stored under `output_dir/.galerna/`.
-
-```yaml
-output_dir: "runs"
-mode: "one_by_one"
-
-cases:
-  layout: shared
-  id_format: "case_{{ '%04d' | format(case_num) }}"
-
-variable_parameters:
-  station: [1, 2, 3, 4]
-
-command: "python run_model.py --station {{station}} --output result_{{case_id}}.txt"
-
-run:
-  backend: snakemake
-  mode: cases
-  executor: local
-  cores: 4
-  workflow:
-    source: generated
-```
-
-Expected output layout:
+`cores` is the local Snakemake budget. `cpus_per_task` is the size of each bulk job. In local bulk mode:
 
 ```text
-runs/
-  result_case_0000.txt
-  result_case_0001.txt
-  .galerna/
-    cases.tsv
-    Snakefile
-    done/
-      case_0000.done
-      case_0001.done
-    logs/
-      case_0000.out
-      case_0000.err
-    status/
-      status_cases.tsv
+number of simultaneous bulk jobs ~= floor(cores / cpus_per_task)
 ```
 
-For `run.backend: snakemake` with `run.mode: cases`, shared layout keeps one status file for the cases group but uses one `.galerna/done/<case_id>.done` marker per case. Snakemake needs a distinct technical output for each case rule.
+## Selecting Cases
 
-Avoid commands like this in shared layout:
+Use `--cases` with comma-separated indices or ranges:
 
-```yaml
-command: "python run_model.py --output result.txt"
+```bash
+galerna build --cases 0-3
+galerna run --cases 1,3
+galerna status --cases 0,2-4
 ```
 
-because cases would overwrite each other.
+The manifest always contains all cases. `--cases` selects which cases to build, run, or show.
 
-## 6. Shared Layout With SLURM Bulk
+In Snakemake bulk mode, `--cases` must select complete groups. For example, with `tasks_per_job: 2`, `--cases 0-1` is valid but `--cases 1` is rejected because it would select only part of `bulk_0000`.
 
-Shared layout can also be combined with bulk execution.
+## Status Files
 
-```yaml
-output_dir: "runs"
-mode: "one_by_one"
+Galerna writes append-only status logs. The important distinction is:
 
-cases:
-  layout: shared
-  id_format: "case_{{ '%04d' | format(case_num) }}"
+- `galerna.status` and `status_<group_id>.tsv`: human/historical logs.
+- `.galerna.done` and `.galerna/done/*.done`: technical success markers for local execution and workflow engines.
 
-variable_parameters:
-  station: "range(1, 129)"
+`galerna status` reads the manifest and status files. It does not need to query Snakemake or SLURM.
 
-command: "python run_model.py --station {{station}} --output result_{{case_id}}.txt"
+Reserved Galerna states include:
 
-run:
-  backend: snakemake
-  mode: bulk
-  executor: slurm
-  tasks_per_job: 32
-  max_jobs: 10
-  cpus_per_task: 16
-  partition: "meteo_long"
-  runtime: 120
-  mem_mb: 4000
-  workflow:
-    source: generated
+- `NOT_BUILT`: calculated by `galerna status` when a case is in the manifest but has no status line.
+- `BUILT`: the case was generated by `build`.
+- `STARTED`: execution started.
+- `DONE`: execution completed successfully.
+- `FAILED`: execution failed.
+
+Users may append custom status lines after Galerna has run. Galerna should accept states such as `QC_OK`, `TRANSFERRED`, or `ARCHIVED`.
+
+For directory layout:
+
+```tsv
+timestamp	status	message
+2026-05-10T11:55:00Z	BUILT	case built
+2026-05-10T12:00:00Z	STARTED	
+2026-05-10T12:03:10Z	DONE	exit_code=0
+2026-05-10T12:10:00Z	QC_OK	output checked manually
 ```
 
-This avoids per-case directories while still letting Snakemake submit grouped SLURM jobs.
+For shared layout, include `case_id`:
 
-## 7. User-Provided Snakefile
-
-Advanced users can provide their own Snakefile. In this mode, `command` is optional because the user workflow defines the execution logic.
-
-Galerna still builds cases and exports a manifest.
-
-```yaml
-templates_dir: "templates"
-output_dir: "runs"
-mode: "one_by_one"
-
-cases:
-  layout: directories
-
-variable_parameters:
-  station: [1, 2, 3, 4]
-
-run:
-  backend: snakemake
-  executor: slurm
-  workflow:
-    source: user
-    file: "workflow/Snakefile"
-    profile: "workflow/profiles/slurm"
-  manifest: "runs/.galerna/cases.tsv"
+```tsv
+timestamp	case_id	status	message
+2026-05-10T11:55:00Z	case_0000	BUILT	case built
+2026-05-10T12:00:00Z	case_0000	STARTED	
+2026-05-10T12:03:10Z	case_0000	DONE	exit_code=0
+2026-05-10T12:10:00Z	case_0000	QC_OK	output checked manually
 ```
 
-The user Snakefile is responsible for reading `cases.tsv`.
+The rule for users is: append new lines, do not edit or delete existing status history. Custom statuses do not replace `.galerna.done`, which remains the workflow-engine marker for technical completion.
 
-## 8. Custom Build Logic With Inheritance
+`galerna status` exposes two views:
+
+```bash
+galerna status
+galerna status --execution
+```
+
+Default `galerna status` reports the latest human status, including custom user statuses. `galerna status --execution` reports the latest Galerna-reserved execution status, ignoring later custom statuses.
+
+## Custom Build Logic With Inheritance
 
 For model-specific build logic, use a Python class that inherits from `Galerna`. This is the right extension point when templates are not enough, for example to compute derived parameters, generate auxiliary files, or prepare case-specific inputs.
 
@@ -385,24 +501,19 @@ YAML:
 
 ```yaml
 wrapper:
-  code: "aux/xbeach_wrapper.py"
-  class: "XbeachWrapper"
+  code: "custom_wrapper.py"
+  class: "CustomWrapper"
 
-templates_dir: "holland_template"
-output_dir: "holland_output"
-mode: "all_combinations"
+templates_dir: "templates"
+output_dir: "runs"
 
 cases:
   layout: directories
-  id_format: "holland_{{ var1 }}_{{ var2 }}_{{ np }}_{{ compiler }}"
 
 variable_parameters:
-  var1: [225, 226]
-  var2: [514, 315]
-  np: [1, 2]
-  compiler: ["gfortran", "ifort"]
+  station: [1, 2]
 
-command: "bash run_xbeach.sh {{compiler}} {{np}}"
+command: "python run_case.py"
 
 run:
   backend: local
@@ -416,160 +527,38 @@ from pathlib import Path
 from galerna import Galerna
 
 
-class XbeachWrapper(Galerna):
+class CustomWrapper(Galerna):
     def build_case(self, case_context: dict) -> None:
         case_dir = Path(case_context["case_dir"])
-        derived_value = case_context["var1"] + case_context["var2"]
-        (case_dir / "derived.txt").write_text(f"{derived_value}\n")
+        derived = case_context["station"] * 10
+        case_context["derived"] = derived
+        (case_dir / "derived.txt").write_text(f"{derived}\n")
 ```
 
 `build_case(case_context)` is called after the case directory has been created and before templates are rendered.
 
-Keep this mechanism for real Python logic. For ordinary text inputs, prefer `templates_dir` and Jinja templates. Symlinks inside `templates_dir` remain supported for `cases.layout: directories`.
+Keep this mechanism for real Python logic. For ordinary text inputs, prefer `templates_dir` and Jinja templates.
 
-For `cases.layout: shared`, Galerna does not render per-case templates, so custom build logic should avoid creating one file per case unless that is intentional.
+## Example Folders
 
-## 9. Future Nextflow Backend
-
-The same structure leaves room for a future Nextflow backend.
-
-```yaml
-output_dir: "runs"
-mode: "one_by_one"
-
-cases:
-  layout: shared
-  id_format: "case_{{ '%04d' | format(case_num) }}"
-
-variable_parameters:
-  station: [1, 2, 3, 4]
-
-run:
-  backend: nextflow
-  executor: slurm
-  workflow:
-    source: user
-    file: "workflow/main.nf"
-    config: "workflow/nextflow.config"
-  manifest: "runs/.galerna/cases.csv"
-```
-
-For a first Galerna version, this can remain a reserved interface rather than an implemented backend.
-
-## Status Files And `galerna status`
-
-Galerna writes append-only status logs so `galerna status` can report progress without depending on external schedulers such as SLURM commands `squeue` or `sacct`.
-
-The important distinction is:
-
-- `galerna.status` and `status_<group_id>.tsv`: human/historical logs;
-- `.galerna.done` and `.galerna/done/*.done`: technical success markers for local execution and workflow engines.
-
-`galerna status` reads the manifest plus these status files. It does not need to query Snakemake or SLURM.
-
-For directory layout:
+The executable examples are organized as two learning paths:
 
 ```text
-runs/0000/galerna.status
-runs/0000/.galerna.done
+examples/directories/
+examples/shared/
 ```
 
-Suggested content:
-
-```tsv
-timestamp	status	message
-2026-05-10T11:55:00Z	BUILT	case built
-2026-05-10T12:00:00Z	STARTED	
-2026-05-10T12:03:10Z	DONE	exit_code=0
-```
-
-The build phase writes `BUILT`. The run phase then appends `STARTED` and either `DONE` or `FAILED`.
-
-For shared layout:
+Start with local execution, then move to Snakemake local, then SLURM cases, then SLURM bulk:
 
 ```text
-runs/.galerna/status/status_cases.tsv
-runs/.galerna/status/status_bulk_0000.tsv
+local
+  -> snakemake local cases
+  -> snakemake slurm cases
+  -> snakemake slurm bulk
 ```
 
-Suggested content:
-
-```tsv
-timestamp	case_id	status	message
-2026-05-10T11:55:00Z	case_0000	BUILT	case built
-2026-05-10T12:00:00Z	case_0000	STARTED	
-2026-05-10T12:03:10Z	case_0000	DONE	exit_code=0
-```
-
-For shared bulk execution, prefer one status file per bulk group instead of one global file. This keeps inode use low while avoiding many jobs appending concurrently to the same file.
-
-Technical done markers depend on the layout and execution mode:
+The advanced wrapper example is in:
 
 ```text
-directory layout, local backend or snakemake cases:
-  runs/0000/.galerna.done
-
-directory layout, snakemake bulk:
-  runs/.galerna/done/bulk_0000.done
-  runs/.galerna/done/bulk_0001.done
-
-shared layout, local backend:
-  runs/.galerna/done/cases.done
-
-shared layout, snakemake cases:
-  runs/.galerna/done/case_0000.done
-  runs/.galerna/done/case_0001.done
-
-shared layout, snakemake bulk:
-  runs/.galerna/done/bulk_0000.done
-  runs/.galerna/done/bulk_0001.done
+examples/advanced/custom_build_hook/
 ```
-
-For `run.backend: snakemake` with `run.mode: cases`, shared layout intentionally keeps one status file for the cases group but uses one `.galerna/done/<case_id>.done` marker per case. Snakemake needs a distinct technical output for each case rule.
-
-For bulk execution, one `.galerna/done/bulk_<group_id>.done` marker should be created after the corresponding bulk group succeeds.
-
-Users may append their own status lines after Galerna has run. Galerna should reserve execution statuses such as `BUILT`, `STARTED`, `DONE`, `FAILED`, and future technical statuses such as `SKIPPED`, but it should not reject custom statuses.
-
-For example, a user or post-run script could append:
-
-```tsv
-timestamp	status	message
-2026-05-10T12:10:00Z	QC_OK	output checked manually
-2026-05-10T12:15:00Z	TRANSFERRED	copied to archive
-```
-
-For shared layout, include `case_id`:
-
-```tsv
-timestamp	case_id	status	message
-2026-05-10T12:10:00Z	case_0000	QC_OK	output checked manually
-```
-
-The rule for users should be: append new lines, do not edit or delete existing status history. Custom statuses are useful for manual QA, transfers, archiving, or project-specific review stages. They do not replace `.galerna.done`, which remains the workflow-engine marker for technical completion.
-
-Current `galerna status` logic:
-
-- `NOT_BUILT`: the case is in the manifest, but no status line exists for it.
-- `BUILT`: latest status line is `BUILT`; the case has been generated but not started.
-- `STARTED`: latest status line is `STARTED`; the case has started and no later status exists.
-- `DONE`: latest status line is `DONE`.
-- `FAILED`: latest status line is `FAILED`.
-- custom status: latest status line is user-defined, for example `QC_OK` or `TRANSFERRED`.
-
-`galerna status` exposes both views:
-
-- default: latest human status, including custom user statuses;
-- `galerna status --execution`: latest Galerna-reserved execution status, ignoring later custom statuses.
-
-For example, after a successful run followed by manual QA:
-
-```tsv
-timestamp	status	message
-2026-05-10T11:55:00Z	BUILT	case built
-2026-05-10T12:00:00Z	STARTED	
-2026-05-10T12:03:10Z	DONE	exit_code=0
-2026-05-10T12:10:00Z	QC_OK	output checked manually
-```
-
-`galerna status` reports `QC_OK`, while `galerna status --execution` reports `DONE`.

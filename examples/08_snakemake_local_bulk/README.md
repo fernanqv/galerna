@@ -38,7 +38,13 @@ bulk_0000 -> case_0000, case_0001
 bulk_0001 -> case_0002, case_0003
 ```
 
-Each bulk rule runs up to `cpus_per_task` case commands concurrently inside the same Snakemake job.
+The concurrency settings have different roles:
+
+- `tasks_per_job: 2` puts two Galerna cases in each bulk group.
+- `cpus_per_task: 2` makes each bulk group ask Snakemake for two cores and lets Galerna run up to two case commands inside that group.
+- `cores: 2` gives Snakemake a total local budget of two cores.
+
+Because `cores` equals `cpus_per_task`, Snakemake runs one bulk group at a time. If `cores` were `4`, Snakemake could run two bulk groups at once.
 
 Technical done markers are per bulk group:
 

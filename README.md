@@ -110,9 +110,9 @@ For normal local execution, prefer `mode: cases`. Bulk mode groups cases and cre
 
 The three bulk parameters control different levels of concurrency:
 
-- `tasks_per_job`: how many Galerna cases are grouped into one bulk Snakemake job.
-- `cpus_per_task`: how many case commands may run at the same time inside one bulk job.
-- `cores`: how many CPU cores Snakemake may use in total for the current local run.
+- `tasks_per_job`: group size. It says how many Galerna cases belong to one bulk Snakemake job.
+- `cpus_per_task`: job size. It says how many cores each bulk job asks Snakemake for, and how many case commands Galerna may run concurrently inside that bulk job.
+- `cores`: local Snakemake budget. It says how many cores Snakemake may use in total on the current machine.
 
 With the example above and four cases, Galerna creates two bulk jobs:
 
@@ -121,7 +121,27 @@ bulk_0000 -> cases 0000, 0001
 bulk_0001 -> cases 0002, 0003
 ```
 
-Each bulk job can run up to `cpus_per_task: 2` case commands concurrently. Since `cores: 2`, Snakemake will normally run one bulk job at a time locally. This mimics the future SLURM pattern where one submitted job reserves several cores and uses them to run several Galerna cases internally.
+Each bulk job asks for `cpus_per_task: 2` cores and can run up to two case commands internally. Since `cores: 2`, Snakemake has only enough local budget to run one bulk job at a time:
+
+```text
+time 1: bulk_0000 uses 2 cores -> cases 0000 and 0001
+time 2: bulk_0001 uses 2 cores -> cases 0002 and 0003
+```
+
+If you changed only `cores` to `4`, Snakemake could run two bulk jobs at the same time:
+
+```text
+time 1: bulk_0000 uses 2 cores -> cases 0000 and 0001
+        bulk_0001 uses 2 cores -> cases 0002 and 0003
+```
+
+So, in local bulk mode:
+
+```text
+number of simultaneous bulk jobs ~= floor(cores / cpus_per_task)
+```
+
+This mimics the future SLURM pattern where one submitted job reserves several cores and uses them to run several Galerna cases internally.
 
 For a cluster-like setup such as:
 

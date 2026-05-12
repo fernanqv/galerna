@@ -147,3 +147,16 @@ galerna status
 ```
 
 Outputs must include `case_id`; status and done files are grouped by bulk group.
+
+### 10 Snakemake SLURM Shared Bulk
+
+Small cluster test using `executor: slurm`, `mode: bulk`, `layout: shared`, and partition `meteo_long`.
+
+```bash
+cd examples/10_snakemake_slurm_shared_bulk
+galerna build
+galerna run
+galerna status
+```
+
+Run this one on a machine with SLURM and the Snakemake SLURM executor plugin available.

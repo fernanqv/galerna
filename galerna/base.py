@@ -782,10 +782,12 @@ def run_bulk(case_ids, done_file, threads):
 
         if self.run_config.executor == "local":
             command.extend(["--cores", str(self.run_config.cores)])
+            command.extend(targets)
         elif self.run_config.executor == "slurm":
             command.extend(["--executor", "slurm"])
             jobs = self.run_config.max_jobs or self.run_config.cores
             command.extend(["--jobs", str(jobs)])
+            command.extend(targets)
             command.extend(self._snakemake_default_resource_args())
         else:
             raise NotImplementedError(
@@ -793,7 +795,6 @@ def run_bulk(case_ids, done_file, threads):
                 f"{self.run_config.executor}."
             )
 
-        command.extend(targets)
         return command
 
     def _snakemake_default_resource_args(self) -> list[str]:

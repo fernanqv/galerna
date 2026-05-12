@@ -125,11 +125,14 @@ def test_snakemake_slurm_command_uses_executor_jobs_and_resources(
     ]
     assert "--jobs" in command
     assert command[command.index("--jobs") + 1] == "20"
+    assert str(output_dir / ".galerna" / "done" / "bulk_0000.done") in command
     assert "--default-resources" in command
+    assert command.index(str(output_dir / ".galerna" / "done" / "bulk_0000.done")) < (
+        command.index("--default-resources")
+    )
     assert "mem_mb=4000" in command
     assert "runtime=120" in command
     assert "slurm_partition=meteo_long" in command
-    assert str(output_dir / ".galerna" / "done" / "bulk_0000.done") in command
 
 
 @pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not found")

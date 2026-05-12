@@ -283,6 +283,7 @@ The `examples/` folder contains executable examples:
 | `07_snakemake_shared_cases` | Snakemake local cases with shared layout |
 | `08_snakemake_local_bulk` | Local bulk mode for development |
 | `09_snakemake_shared_bulk` | Shared layout plus local bulk mode |
+| `10_snakemake_slurm_shared_bulk` | Shared bulk execution via Snakemake SLURM |
 
 Run any example from its own directory:
 

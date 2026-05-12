@@ -170,6 +170,8 @@ case 0001 -> SLURM job
 case 0002 -> SLURM job
 ```
 
+Galerna invokes Snakemake with its SLURM executor. The generated Snakefile uses `threads: cpus_per_task` and resource fields such as `mem_mb`, `runtime`, and `slurm_partition`. `max_jobs` is passed to Snakemake as the maximum number of submitted/active jobs.
+
 ## 4. Snakemake SLURM Bulk, 32 Cases Per Job With 16 Cores
 
 Use this when a cluster policy requires large jobs, or when submitting one job per case is inefficient.
@@ -211,6 +213,8 @@ bulk 0003 -> cases 0096-0127 -> 16 cores
 ```
 
 Inside each bulk job, Galerna's generated Snakemake rule can execute up to `cpus_per_task` case commands concurrently.
+
+For this example, Snakemake submits one SLURM job per bulk group. Each bulk job requests 16 cores, then Galerna runs up to 16 case commands inside that job. `max_jobs: 10` limits how many bulk jobs Snakemake may submit or keep active at once.
 
 ## 4b. Snakemake Local Bulk For Development
 

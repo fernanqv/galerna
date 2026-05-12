@@ -227,10 +227,14 @@ def main():
     if args.action == "run":
         contexts_to_run = wrapper._select_contexts(cases_list)
         if wrapper.run_config.backend == "snakemake":
+            executor_detail = f"cores={wrapper.run_config.cores}"
+            if wrapper.run_config.executor == "slurm":
+                max_jobs = wrapper.run_config.max_jobs or wrapper.run_config.cores
+                executor_detail = f"max_jobs={max_jobs}"
             print(
                 f"Running {len(contexts_to_run)} case(s) with Snakemake "
                 f"executor={wrapper.run_config.executor}, "
-                f"cores={wrapper.run_config.cores}"
+                f"{executor_detail}"
             )
         else:
             print(f"Running {len(contexts_to_run)} case(s) locally, sequentially")

@@ -1,5 +1,6 @@
 import csv
 import shutil
+import subprocess
 
 import pytest
 
@@ -56,6 +57,79 @@ def test_snakemake_bulk_build_writes_generated_snakefile(tmp_path):
     assert "threads: 2" in content
     assert "run_bulk(params.case_ids, output[0], threads)" in content
     assert str(output_dir / ".galerna" / "done" / "bulk_0000.done") in content
+
+
+def test_snakemake_rules_include_threads_and_slurm_resources(tmp_path):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1]},
+        command="echo {{station}}",
+        run={
+            "backend": "snakemake",
+            "mode": "cases",
+            "executor": "slurm",
+            "cpus_per_task": 4,
+            "partition": "meteo_long",
+            "runtime": 30,
+            "mem_mb": 1000,
+        },
+    )
+
+    wrapper.build_cases()
+
+    content = (output_dir / ".galerna" / "Snakefile").read_text()
+    assert "threads: 4" in content
+    assert "resources: mem_mb=1000, runtime=30, slurm_partition='meteo_long'" in (
+        content
+    )
+
+
+def test_snakemake_slurm_command_uses_executor_jobs_and_resources(
+    tmp_path, monkeypatch
+):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1, 2, 3, 4]},
+        command="echo {{station}}",
+        run={
+            "backend": "snakemake",
+            "mode": "bulk",
+            "executor": "slurm",
+            "tasks_per_job": 2,
+            "cpus_per_task": 16,
+            "max_jobs": 20,
+            "partition": "meteo_long",
+            "runtime": 120,
+            "mem_mb": 4000,
+        },
+    )
+    commands = []
+
+    def capture_run(command, check):
+        commands.append(command)
+
+    monkeypatch.setattr(subprocess, "run", capture_run)
+
+    wrapper.run_cases(cases=[0, 1])
+
+    command = commands[0]
+    assert command[:6] == [
+        "snakemake",
+        "--snakefile",
+        str(output_dir / ".galerna" / "Snakefile"),
+        "--rerun-incomplete",
+        "--executor",
+        "slurm",
+    ]
+    assert "--jobs" in command
+    assert command[command.index("--jobs") + 1] == "20"
+    assert "--default-resources" in command
+    assert "mem_mb=4000" in command
+    assert "runtime=120" in command
+    assert "slurm_partition=meteo_long" in command
+    assert str(output_dir / ".galerna" / "done" / "bulk_0000.done") in command
 
 
 @pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not found")

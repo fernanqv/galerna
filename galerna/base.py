@@ -540,6 +540,8 @@ class Galerna:
                         f"    output: {str(context['done_file'])!r}",
                         f"    log: stdout={str(context['stdout_log'])!r}, "
                         f"stderr={str(context['stderr_log'])!r}",
+                        f"    threads: {self.run_config.cpus_per_task}",
+                        *self._snakemake_rule_resource_lines(),
                         f"    params: case_id={case_id!r}",
                         "    run:",
                         "        run_case(CASES[params.case_id])",
@@ -573,6 +575,7 @@ class Galerna:
                         f"rule {group_id}:",
                         f"    output: {str(done_file)!r}",
                         f"    threads: {self.run_config.cpus_per_task}",
+                        *self._snakemake_rule_resource_lines(),
                         f"    params: case_ids={case_ids!r}",
                         "    run:",
                         "        run_bulk(params.case_ids, output[0], threads)",
@@ -595,6 +598,18 @@ class Galerna:
         )
         snakefile_path.write_text(snakefile + "\n")
         self.logger.debug("Snakefile saved to %s", snakefile_path)
+
+    def _snakemake_rule_resource_lines(self) -> list[str]:
+        resources = []
+        if self.run_config.mem_mb is not None:
+            resources.append(f"mem_mb={self.run_config.mem_mb}")
+        if self.run_config.runtime is not None:
+            resources.append(f"runtime={self.run_config.runtime}")
+        if self.run_config.partition is not None:
+            resources.append(f"slurm_partition={self.run_config.partition!r}")
+        if not resources:
+            return []
+        return [f"    resources: {', '.join(resources)}"]
 
     def _snakemake_cases_prelude(self) -> str:
         layout = self.cases_config.layout
@@ -741,10 +756,6 @@ def run_bulk(case_ids, done_file, threads):
                 progress("done", context, position, total)
 
     def run_cases_snakemake(self, cases: list[int] | None = None) -> None:
-        if self.run_config.executor != "local":
-            raise NotImplementedError(
-                "run.backend: snakemake currently supports run.executor: local."
-            )
         if self.run_config.mode not in {"cases", "bulk"}:
             raise NotImplementedError(
                 f"run.backend: snakemake does not support run.mode: "
@@ -757,17 +768,45 @@ def run_bulk(case_ids, done_file, threads):
 
         workflow_file = self._snakemake_workflow_file()
         targets = self._snakemake_targets(contexts_to_run, cases)
+        command = self._snakemake_command(workflow_file, targets)
+        self.logger.debug("Running Snakemake command: %s", shlex.join(command))
+        subprocess.run(command, check=True)
+
+    def _snakemake_command(self, workflow_file: str, targets: list[str]) -> list[str]:
         command = [
             "snakemake",
             "--snakefile",
             workflow_file,
-            "--cores",
-            str(self.run_config.cores),
             "--rerun-incomplete",
-            *targets,
         ]
-        self.logger.debug("Running Snakemake command: %s", shlex.join(command))
-        subprocess.run(command, check=True)
+
+        if self.run_config.executor == "local":
+            command.extend(["--cores", str(self.run_config.cores)])
+        elif self.run_config.executor == "slurm":
+            command.extend(["--executor", "slurm"])
+            jobs = self.run_config.max_jobs or self.run_config.cores
+            command.extend(["--jobs", str(jobs)])
+            command.extend(self._snakemake_default_resource_args())
+        else:
+            raise NotImplementedError(
+                f"run.backend: snakemake does not support run.executor: "
+                f"{self.run_config.executor}."
+            )
+
+        command.extend(targets)
+        return command
+
+    def _snakemake_default_resource_args(self) -> list[str]:
+        resources = []
+        if self.run_config.mem_mb is not None:
+            resources.append(f"mem_mb={self.run_config.mem_mb}")
+        if self.run_config.runtime is not None:
+            resources.append(f"runtime={self.run_config.runtime}")
+        if self.run_config.partition is not None:
+            resources.append(f"slurm_partition={self.run_config.partition}")
+        if not resources:
+            return []
+        return ["--default-resources", *resources]
 
     def _snakemake_targets(
         self, contexts_to_run: list[dict], cases: list[int] | None

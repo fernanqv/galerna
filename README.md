@@ -141,7 +141,7 @@ So, in local bulk mode:
 number of simultaneous bulk jobs ~= floor(cores / cpus_per_task)
 ```
 
-This mimics the future SLURM pattern where one submitted job reserves several cores and uses them to run several Galerna cases internally.
+This matches the SLURM pattern where one submitted job reserves several cores and uses them to run several Galerna cases internally.
 
 For a cluster-like setup such as:
 
@@ -161,7 +161,7 @@ the intended meaning is:
 - inside that SLURM job, up to 16 case commands can run concurrently;
 - at most 20 Snakemake/SLURM jobs are submitted or active at once.
 
-`executor: slurm` is part of the planned interface; the currently implemented executor is `local`.
+With `executor: slurm`, Galerna delegates to Snakemake's SLURM executor. Galerna passes `max_jobs` as Snakemake's job limit and maps `partition`, `runtime`, `mem_mb`, and `cpus_per_task` into the generated Snakefile/Snakemake command. This has to be run on a system where SLURM and the Snakemake SLURM executor plugin are available.
 
 ## Layouts
 
@@ -297,4 +297,4 @@ See [examples/README.md](examples/README.md) for the full list.
 
 ## More Details
 
-See [docs/yaml_configuration_examples.md](docs/yaml_configuration_examples.md) for a longer YAML configuration guide, including planned SLURM and user-provided Snakefile interfaces.
+See [docs/yaml_configuration_examples.md](docs/yaml_configuration_examples.md) for a longer YAML configuration guide, including SLURM and planned user-provided Snakefile interfaces.

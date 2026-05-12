@@ -116,4 +116,6 @@ For `cases.layout: shared`, logs and status should live under `<output_dir>/.gal
 - `.galerna/status/status_<group_id>.tsv`
 - `.galerna/done/<group_id>.done`
 
+Future usability work should make these logs easier to discover from the CLI, for example with `galerna logs --case <case_id>` or by showing log paths in `galerna status`.
+
 Use Snakemake input functions or `lambda` where needed so arbitrary Galerna case directory names are supported.

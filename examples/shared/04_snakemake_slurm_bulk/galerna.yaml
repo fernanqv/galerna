@@ -6,8 +6,8 @@ cases:
   id_format: "case_{{ '%04d' | format(case_num) }}"
 
 variable_parameters:
-  station: [501, 502, 503, 504]
-  sleep_seconds: [10, 10, 10, 10]
+  station: range(1,101)
+  sleep_seconds: range(1,101)
 
 command: "python -c 'from pathlib import Path; import socket; import time; print(\"START {{case_id}} station={{station}} host=\" + socket.gethostname(), flush=True); time.sleep({{sleep_seconds}}); Path(\"result_{{case_id}}.txt\").write_text(\"case_id={{case_id}}\\nstation={{station}}\\nhost=\" + socket.gethostname() + \"\\n\"); print(\"DONE {{case_id}}\", flush=True)'"
 
@@ -15,9 +15,9 @@ run:
   backend: snakemake
   mode: bulk
   executor: slurm
-  tasks_per_job: 4
+  tasks_per_job: 16
   cpus_per_task: 16
-  max_jobs: 1
+  max_jobs: 100
   partition: "meteo_long"
   runtime: 10
   mem_mb: 1000

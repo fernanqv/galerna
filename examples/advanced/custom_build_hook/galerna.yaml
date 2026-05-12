@@ -1,6 +1,6 @@
 wrapper:
   code: "custom_wrapper.py"
-  class: "ExampleWrapper"
+  class: "CustomWrapper"
 
 templates_dir: "templates"
 output_dir: "runs"

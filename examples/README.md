@@ -1,32 +1,100 @@
 # Galerna Examples
 
-These examples exercise Galerna's first clean execution paths:
+These examples are organized as two learning paths:
+
+- `directories`: one working directory per case.
+- `shared`: all cases run from the same output directory.
+
+Templates are optional. They are useful when each case needs generated input files, but Galerna can also run directly from a rendered `command`.
+
+## Three Independent Choices
+
+A Galerna YAML combines three mostly independent choices:
+
+1. Case layout:
+   - `directories`: one directory per case.
+   - `shared`: all cases run in the same output directory.
+2. Input generation:
+   - with `templates`: Galerna renders files before running.
+   - without `templates`: the command is enough, or inputs already exist.
+3. Execution backend:
+   - `local`: simple sequential execution.
+   - `snakemake`: local parallel execution or SLURM submission.
+
+## Recommended Progression
+
+Start with a local run, then scale the same idea through Snakemake:
+
+```text
+local
+  -> snakemake local cases
+  -> snakemake slurm cases
+  -> snakemake slurm bulk
+```
+
+In direct local mode, Galerna runs one case at a time:
 
 ```yaml
 run:
   backend: local
 ```
 
-and:
+In Snakemake local cases mode, several cases can run at once on the local machine:
 
 ```yaml
 run:
   backend: snakemake
   mode: cases
   executor: local
+  cores: 2
 ```
 
-Direct local execution is sequential. Snakemake local execution can run multiple case tasks concurrently using `run.cores`.
+In Snakemake SLURM cases mode, Snakemake submits one job per case:
 
-Run any example from its own folder:
+```yaml
+run:
+  backend: snakemake
+  mode: cases
+  executor: slurm
+  max_jobs: 16
+  partition: "meteo_long"
+```
+
+In Snakemake SLURM bulk mode, Snakemake submits one job per group of cases, and Galerna runs several case commands inside each job:
+
+```yaml
+run:
+  backend: snakemake
+  mode: bulk
+  executor: slurm
+  tasks_per_job: 16
+  cpus_per_task: 16
+  max_jobs: 100
+  partition: "meteo_long"
+```
+
+## Directory Layout Path
+
+Use this path when each simulation should have its own working directory.
+
+| Example | Purpose |
+| --- | --- |
+| `directories/01_local_with_templates` | Local sequential run with rendered input files |
+| `directories/02_local_no_templates` | Local sequential run without templates |
+| `directories/03_snakemake_local_cases` | Snakemake local, one task per case |
+| `directories/04_snakemake_slurm_cases` | Snakemake SLURM, one job per case |
+| `directories/05_snakemake_slurm_bulk` | Snakemake SLURM, grouped cases per job |
+
+Run one:
 
 ```bash
-cd examples/01_template_model
+cd examples/directories/01_local_with_templates
 galerna build
 galerna run
+galerna status
 ```
 
-Useful files after a run:
+Useful files after a directory-layout run:
 
 ```text
 runs/.galerna/cases.tsv
@@ -36,127 +104,40 @@ runs/<case_id>/galerna.status
 runs/<case_id>/.galerna.done
 ```
 
-`galerna.status` is the human-readable history. `.galerna.done` is the technical success marker.
+For Snakemake bulk mode, the technical done marker is grouped under `runs/.galerna/done/`.
 
-## Examples
+## Shared Layout Path
 
-### 01 Template Model
+Use this path when you want to avoid one directory per case.
 
-The most common layout: one directory per case, with templates rendered into each case directory.
+| Example | Purpose |
+| --- | --- |
+| `shared/01_local_no_templates` | Local sequential run in one shared directory |
+| `shared/02_snakemake_local_cases` | Snakemake local, one task per case |
+| `shared/03_snakemake_slurm_cases` | Snakemake SLURM, one job per case |
+| `shared/04_snakemake_slurm_bulk` | Snakemake SLURM, grouped cases per job |
 
-```bash
-cd examples/01_template_model
-galerna build
-galerna run
-```
-
-Try a subset:
-
-```bash
-galerna run --cases 1,3
-```
-
-### 02 Directories Without Templates
-
-One directory per case, no templates. The command itself writes a case-specific result.
+Run one:
 
 ```bash
-cd examples/02_directories_no_templates
-galerna run
-```
-
-### 03 Shared Layout Without Templates
-
-All cases run in the same `runs/` directory. This avoids one directory per case and is useful for filesystems with strict inode limits.
-
-The command must use `case_id` to avoid overwriting outputs.
-
-```bash
-cd examples/03_shared_no_templates
-galerna run
-```
-
-### 04 Custom Build Hook
-
-Uses `wrapper.code` and `wrapper.class` to add custom Python logic in `build_case`.
-
-```bash
-cd examples/04_custom_build_hook
-galerna run
-```
-
-### 05 Failure Status
-
-One case succeeds and one fails. This is useful for checking `galerna.status` and `.galerna.done` behavior.
-
-```bash
-cd examples/05_failure_status
-galerna run
-```
-
-The command exits with an error by design.
-
-### 06 Snakemake Local Cases
-
-Uses `run.backend: snakemake` with one Snakemake task per Galerna case.
-
-```bash
-cd examples/06_snakemake_local_cases
+cd examples/shared/01_local_no_templates
 galerna build
 galerna run
 galerna status
 ```
 
-This example generates `runs/.galerna/Snakefile` and runs up to two cases at the same time with `cores: 2`.
+Useful files after a shared-layout run:
 
-### 07 Snakemake Shared Cases
-
-Uses `cases.layout: shared` with `run.backend: snakemake`. This avoids one directory per case and keeps status grouped under `runs/.galerna/status/`.
-
-```bash
-cd examples/07_snakemake_shared_cases
-galerna build
-galerna run
-galerna status
+```text
+runs/.galerna/cases.tsv
+runs/.galerna/logs/<case_id>.out
+runs/.galerna/logs/<case_id>.err
+runs/.galerna/status/status_<group_id>.tsv
+runs/.galerna/done/<group_id>.done
 ```
 
-Outputs must include `case_id` or another unique value because all cases run from the same `runs/` directory.
+Commands in shared layout should write unique output names, usually using `{{case_id}}`.
 
-### 08 Snakemake Local Bulk
+## Advanced
 
-Uses `run.mode: bulk` with `executor: local`. This is mainly a development and debugging example for bulk execution before using SLURM.
-
-```bash
-cd examples/08_snakemake_local_bulk
-galerna build
-galerna run
-galerna status
-```
-
-For normal local execution, prefer `run.mode: cases`.
-
-### 09 Snakemake Shared Bulk
-
-Combines `cases.layout: shared` with `run.mode: bulk`. This is the lowest-inode example and is useful for testing the shape of future SLURM bulk runs.
-
-```bash
-cd examples/09_snakemake_shared_bulk
-galerna build
-galerna run
-galerna status
-```
-
-Outputs must include `case_id`; status and done files are grouped by bulk group.
-
-### 10 Snakemake SLURM Shared Bulk
-
-Small cluster test using `executor: slurm`, `mode: bulk`, `layout: shared`, and partition `meteo_long`.
-
-```bash
-cd examples/10_snakemake_slurm_shared_bulk
-galerna build
-galerna run
-galerna status
-```
-
-Run this one on a machine with SLURM and the Snakemake SLURM executor plugin available.
+`advanced/custom_build_hook` shows how to subclass `Galerna` and add custom logic in `build_case`.

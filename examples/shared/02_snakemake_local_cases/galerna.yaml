@@ -1,0 +1,18 @@
+output_dir: "runs"
+mode: "one_by_one"
+
+cases:
+  layout: shared
+  id_format: "case_{{ '%04d' | format(case_num) }}"
+
+variable_parameters:
+  station: [201, 202, 203, 204]
+  sleep_seconds: [1, 1, 1, 1]
+
+command: "python -c 'from pathlib import Path; import time; print(\"START {{case_id}} station={{station}}\", flush=True); time.sleep({{sleep_seconds}}); Path(\"result_{{case_id}}.txt\").write_text(\"station={{station}}\\n\"); print(\"DONE {{case_id}}\", flush=True)'"
+
+run:
+  backend: snakemake
+  mode: cases
+  executor: local
+  cores: 2

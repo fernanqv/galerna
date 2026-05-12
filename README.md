@@ -63,7 +63,7 @@ When no `--config` is provided, Galerna looks for `galerna.yaml` in the current 
 - `cases.layout`: case storage layout, either `directories` or `shared`.
 - `run.backend`: execution backend, currently `local` or `snakemake`.
 - `run.mode`: Snakemake execution shape, `cases` or `bulk`.
-- `run.executor`: Snakemake executor, currently local execution is implemented.
+- `run.executor`: Snakemake executor, currently `local` and `slurm`.
 
 ## Execution Modes
 
@@ -270,25 +270,18 @@ class CustomWrapper(Galerna):
 
 ## Examples
 
-The `examples/` folder contains executable examples:
+The `examples/` folder contains executable learning paths:
 
 | Example | Purpose |
 | --- | --- |
-| `01_template_model` | Common directory layout with templates |
-| `02_directories_no_templates` | Directory layout without templates |
-| `03_shared_no_templates` | Shared layout without templates |
-| `04_custom_build_hook` | Wrapper inheritance with `build_case` |
-| `05_failure_status` | Failure handling and status files |
-| `06_snakemake_local_cases` | Snakemake local, one task per case |
-| `07_snakemake_shared_cases` | Snakemake local cases with shared layout |
-| `08_snakemake_local_bulk` | Local bulk mode for development |
-| `09_snakemake_shared_bulk` | Shared layout plus local bulk mode |
-| `10_snakemake_slurm_shared_bulk` | Shared bulk execution via Snakemake SLURM |
+| `directories/` | Start with one directory per case, then scale to Snakemake and SLURM |
+| `shared/` | Start with one shared output directory, then scale to Snakemake and SLURM bulk |
+| `advanced/custom_build_hook` | Wrapper inheritance with `build_case` |
 
 Run any example from its own directory:
 
 ```bash
-cd examples/06_snakemake_local_cases
+cd examples/directories/01_local_with_templates
 galerna build
 galerna run
 galerna status

@@ -104,6 +104,36 @@ def test_all_combinations_builds_cartesian_product(tmp_path):
     ]
 
 
+def test_variable_parameters_can_load_external_yaml_file(tmp_path):
+    output_dir = tmp_path / "output"
+    parameters_path = tmp_path / "parameters.yaml"
+    parameters_path.write_text("station:\n  - 1147\n  - 1148\n")
+
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters=str(parameters_path),
+        cases={"id_format": "{{ station }}"},
+        command="echo {{station}}",
+    )
+
+    wrapper.build_cases()
+
+    rows = read_manifest(output_dir)
+    assert [row["case_id"] for row in rows] == ["1147", "1148"]
+    assert [row["command"] for row in rows] == ["echo 1147", "echo 1148"]
+    assert (output_dir / "1147").is_dir()
+    assert (output_dir / "1148").is_dir()
+
+
+def test_string_parameter_value_is_rejected_with_file_hint(tmp_path):
+    with pytest.raises(TypeError, match="To load parameters from a YAML file"):
+        Galerna(
+            output_dir=str(tmp_path / "output"),
+            variable_parameters={"variable_parameters": "parameters.yaml"},
+            command="echo {{station}}",
+        )
+
+
 def test_build_case_hook_runs_before_template_rendering(tmp_path):
     templates_dir = tmp_path / "templates"
     templates_dir.mkdir()

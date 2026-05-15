@@ -281,6 +281,8 @@ class Galerna:
         if not variable_parameters:
             self.cases_context = [{}]
         elif self.mode == "all_combinations":
+            for key, values in variable_parameters.items():
+                self._validate_parameter_sequence(key, values)
             keys = variable_parameters.keys()
             values = variable_parameters.values()
             self.cases_context = [
@@ -307,6 +309,14 @@ class Galerna:
             return self._parse_range(value)
         return value
 
+    def _validate_parameter_sequence(self, key: str, values: Any) -> None:
+        if isinstance(values, str) or not hasattr(values, "__len__"):
+            raise TypeError(
+                f"variable_parameters.{key} must be a sequence of values. "
+                "To load parameters from a YAML file, use "
+                "variable_parameters: 'parameters.yaml' at the top level."
+            )
+
     def _parse_range(self, value: str) -> list[int]:
         match = re.fullmatch(
             r"range\(\s*(-?\d+)\s*,\s*(-?\d+)(?:\s*,\s*(-?\d+))?\s*\)",
@@ -324,10 +334,7 @@ class Galerna:
         self, variable_parameters: dict[str, list], num_cases: int
     ) -> None:
         for key, values in variable_parameters.items():
-            if not hasattr(values, "__len__"):
-                raise TypeError(
-                    f"variable_parameters.{key} must be a sequence in one_by_one mode."
-                )
+            self._validate_parameter_sequence(key, values)
             if len(values) != num_cases:
                 raise ValueError(
                     "All variable_parameters must have the same length in "

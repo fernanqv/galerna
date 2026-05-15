@@ -65,6 +65,84 @@ When no `--config` is provided, Galerna looks for `galerna.yaml` in the current 
 - `run.mode`: Snakemake execution shape, `cases` or `bulk`.
 - `run.executor`: Snakemake executor, currently `local` and `slurm`.
 
+## Parameters
+
+`variable_parameters` defines the values that change between cases. By default,
+Galerna uses `mode: "one_by_one"`, so all parameter lists are zipped together and
+must have the same length:
+
+```yaml
+mode: "one_by_one"
+
+variable_parameters:
+  station: [1, 2, 3]
+  sleep_seconds: [5, 10, 15]
+```
+
+This creates:
+
+```text
+case 0 -> station=1, sleep_seconds=5
+case 1 -> station=2, sleep_seconds=10
+case 2 -> station=3, sleep_seconds=15
+```
+
+Use `mode: "all_combinations"` when you want the Cartesian product of all
+values:
+
+```yaml
+mode: "all_combinations"
+
+variable_parameters:
+  station: [1, 2]
+  compiler: ["gcc", "intel"]
+```
+
+This creates four cases: all station/compiler combinations.
+
+For long integer sequences, a parameter value can be a `range(start, stop)` or
+`range(start, stop, step)` string:
+
+```yaml
+variable_parameters:
+  station: range(1,101)
+  sleep_seconds: range(10,1010,10)
+```
+
+`variable_parameters` can also point to a separate YAML file. This is useful
+when the case matrix is large:
+
+```yaml
+variable_parameters: "parameters.yaml"
+
+command: "python run_model.py {{ station }} {{ scenario }}"
+```
+
+where `parameters.yaml` contains the parameter mapping:
+
+```yaml
+station: [1, 2, 3]
+scenario: ["base", "storm", "surge"]
+```
+
+`fixed_parameters` defines values shared by every case. They are added to the
+same Jinja context as the variable parameters, so they can be used in
+`command`, `cases.id_format`, and templates:
+
+```yaml
+variable_parameters:
+  station: [1, 2, 3]
+
+fixed_parameters:
+  model: "ww3"
+  sleep_seconds: 1
+
+command: "python run_model.py --model {{ model }} --station {{ station }}"
+```
+
+Avoid reusing the same key in `variable_parameters` and `fixed_parameters`; a
+fixed value is global and should not be used for per-case variation.
+
 ## Execution Modes
 
 ### Direct Local

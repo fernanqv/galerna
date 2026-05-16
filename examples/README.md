@@ -46,7 +46,9 @@ run:
   backend: snakemake
   mode: cases
   executor: local
-  cores: 2
+  snakemake:
+    cli:
+      cores: 2
 ```
 
 In Snakemake SLURM cases mode, Snakemake submits one job per case:
@@ -56,8 +58,12 @@ run:
   backend: snakemake
   mode: cases
   executor: slurm
-  max_jobs: 16
-  partition: "meteo_long"
+  snakemake:
+    rule:
+      resources:
+        runtime: 10
+        mem_mb: 1000
+        slurm_partition: "meteo_long"
 ```
 
 In Snakemake SLURM bulk mode, Snakemake submits one job per group of cases, and Galerna runs several case commands inside each job:
@@ -67,10 +73,14 @@ run:
   backend: snakemake
   mode: bulk
   executor: slurm
-  tasks_per_job: 16
-  cpus_per_task: 16
-  max_jobs: 100
-  partition: "meteo_long"
+  cases_per_job: 16
+  snakemake:
+    rule:
+      threads: 16
+      resources:
+        runtime: 10
+        mem_mb_per_cpu: 1000
+        slurm_partition: "meteo_long"
 ```
 
 ## Directory Layout Path
@@ -84,6 +94,7 @@ Use this path when each simulation should have its own working directory.
 | `directories/03_snakemake_local_cases` | Snakemake local, one task per case |
 | `directories/04_snakemake_slurm_cases` | Snakemake SLURM, one job per case |
 | `directories/05_snakemake_slurm_bulk` | Snakemake SLURM, grouped cases per job |
+| `directories/06_snakemake_slurm_mpi_cases` | Snakemake SLURM, one 4-rank MPI job per case |
 
 Run one:
 

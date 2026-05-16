@@ -1,0 +1,26 @@
+output_dir: "runs"
+mode: "one_by_one"
+
+cases:
+  layout: directories
+  id_format: "case_{{ '%04d' | format(case_num) }}"
+
+variable_parameters:
+  station: [301, 302, 303, 304]
+  sleep_seconds: [1, 1, 1, 1]
+
+command: "module load openmpi-5.0.5/gcc-8.5.0-slurm-ogwvq && PMIX_MCA_psec=native srun --overlap --mpi=pmix -n 4 ../../hello_mpi {{case_id}} {{station}} {{sleep_seconds}}"
+
+run:
+  backend: snakemake
+  mode: cases
+  executor: slurm
+  snakemake:
+    rule:
+      threads: 4
+      resources:
+        tasks: 4
+        cpus_per_task: 1
+        runtime: 10
+        mem_mb_per_cpu: 1000
+        slurm_partition: "meteo_long"

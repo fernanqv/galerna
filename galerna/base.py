@@ -35,18 +35,25 @@ class WorkflowConfig:
 
 
 @dataclass
+class SnakemakeRuleConfig:
+    threads: int | None = None
+    resources: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class SnakemakeConfig:
+    rule: SnakemakeRuleConfig = field(default_factory=SnakemakeRuleConfig)
+    cli: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class RunConfig:
     backend: str = "local"
     mode: str = "cases"
     executor: str = "local"
-    cores: int = 1
-    cpus_per_task: int = 1
-    tasks_per_job: int = 1
-    max_jobs: int | None = None
-    partition: str | None = None
-    runtime: int | None = None
-    mem_mb: int | None = None
+    cases_per_job: int = 1
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
+    snakemake: SnakemakeConfig = field(default_factory=SnakemakeConfig)
 
 
 @dataclass
@@ -144,18 +151,19 @@ class Galerna:
                 "backend": self.run_config.backend,
                 "mode": self.run_config.mode,
                 "executor": self.run_config.executor,
-                "cores": self.run_config.cores,
-                "cpus_per_task": self.run_config.cpus_per_task,
-                "tasks_per_job": self.run_config.tasks_per_job,
-                "max_jobs": self.run_config.max_jobs,
-                "partition": self.run_config.partition,
-                "runtime": self.run_config.runtime,
-                "mem_mb": self.run_config.mem_mb,
+                "cases_per_job": self.run_config.cases_per_job,
                 "workflow": {
                     "source": self.run_config.workflow.source,
                     "file": self.run_config.workflow.file,
                     "profile": self.run_config.workflow.profile,
                     "config": self.run_config.workflow.config,
+                },
+                "snakemake": {
+                    "rule": {
+                        "threads": self.run_config.snakemake.rule.threads,
+                        "resources": self.run_config.snakemake.rule.resources,
+                    },
+                    "cli": self.run_config.snakemake.cli,
                 },
             },
             "status": {"mode": self.status_config.mode},
@@ -186,23 +194,50 @@ class Galerna:
 
     def _normalize_run_config(self, run: dict | None) -> RunConfig:
         run = run or {}
+        if not isinstance(run, dict):
+            raise ValueError("run must be a mapping.")
+
+        allowed_keys = {
+            "backend",
+            "mode",
+            "executor",
+            "cases_per_job",
+            "workflow",
+            "snakemake",
+        }
+        unknown_keys = sorted(set(run) - allowed_keys)
+        if unknown_keys:
+            keys = ", ".join(unknown_keys)
+            raise ValueError(f"Unsupported run key(s): {keys}.")
+
         workflow = run.get("workflow", {}) or {}
+        snakemake = run.get("snakemake", {}) or {}
+        if not isinstance(workflow, dict):
+            raise ValueError("run.workflow must be a mapping.")
+        if not isinstance(snakemake, dict):
+            raise ValueError("run.snakemake must be a mapping.")
+
+        snakemake_rule = snakemake.get("rule", {}) or {}
+        if not isinstance(snakemake_rule, dict):
+            raise ValueError("run.snakemake.rule must be a mapping.")
+
         return RunConfig(
             backend=run.get("backend", "local"),
             mode=run.get("mode", "cases"),
             executor=run.get("executor", "local"),
-            cores=run.get("cores", 1),
-            cpus_per_task=run.get("cpus_per_task", 1),
-            tasks_per_job=run.get("tasks_per_job", 1),
-            max_jobs=run.get("max_jobs"),
-            partition=run.get("partition"),
-            runtime=run.get("runtime"),
-            mem_mb=run.get("mem_mb"),
+            cases_per_job=run.get("cases_per_job", 1),
             workflow=WorkflowConfig(
                 source=workflow.get("source", "generated"),
                 file=workflow.get("file"),
                 profile=workflow.get("profile"),
                 config=workflow.get("config"),
+            ),
+            snakemake=SnakemakeConfig(
+                rule=SnakemakeRuleConfig(
+                    threads=snakemake_rule.get("threads"),
+                    resources=snakemake_rule.get("resources", {}) or {},
+                ),
+                cli=snakemake.get("cli", {}) or {},
             ),
         )
 
@@ -228,17 +263,19 @@ class Galerna:
         if self.run_config.mode not in {"cases", "bulk"}:
             raise ValueError("run.mode must be 'cases' or 'bulk'.")
 
-        if self.run_config.tasks_per_job < 1:
-            raise ValueError("run.tasks_per_job must be greater than or equal to 1.")
-
-        if self.run_config.cpus_per_task < 1:
-            raise ValueError("run.cpus_per_task must be greater than or equal to 1.")
+        if (
+            not isinstance(self.run_config.cases_per_job, int)
+            or self.run_config.cases_per_job < 1
+        ):
+            raise ValueError("run.cases_per_job must be greater than or equal to 1.")
 
         if self.run_config.executor not in {"local", "slurm"}:
             raise ValueError("run.executor must be 'local' or 'slurm'.")
 
         if self.run_config.workflow.source not in {"generated", "user"}:
             raise ValueError("run.workflow.source must be 'generated' or 'user'.")
+
+        self._validate_snakemake_config()
 
         if self.run_config.workflow.source == "generated" and not self.command:
             raise ValueError(
@@ -257,6 +294,21 @@ class Galerna:
             raise ValueError(
                 "templates_dir is not supported with cases.layout: shared."
             )
+
+    def _validate_snakemake_config(self) -> None:
+        threads = self.run_config.snakemake.rule.threads
+        if threads is not None and (not isinstance(threads, int) or threads < 1):
+            raise ValueError(
+                "run.snakemake.rule.threads must be greater than or equal to 1."
+            )
+
+        resources = self.run_config.snakemake.rule.resources
+        if not isinstance(resources, dict):
+            raise ValueError("run.snakemake.rule.resources must be a mapping.")
+
+        cli = self.run_config.snakemake.cli
+        if not isinstance(cli, dict):
+            raise ValueError("run.snakemake.cli must be a mapping.")
 
     def _create_template_env(self) -> Environment | None:
         if self.templates_dir is None:
@@ -397,7 +449,7 @@ class Galerna:
             if self.cases_config.layout == "shared":
                 return "cases"
             return context["case_id"]
-        group_num = context["case_num"] // self.run_config.tasks_per_job
+        group_num = context["case_num"] // self.run_config.cases_per_job
         return f"bulk_{group_num:04d}"
 
     def _done_group_for_shared_layout(self, context: dict) -> str:
@@ -547,8 +599,7 @@ class Galerna:
                         f"    output: {str(context['done_file'])!r}",
                         f"    log: stdout={str(context['stdout_log'])!r}, "
                         f"stderr={str(context['stderr_log'])!r}",
-                        f"    threads: {self.run_config.cpus_per_task}",
-                        *self._snakemake_rule_resource_lines(),
+                        *self._snakemake_rule_directive_lines(),
                         f"    params: case_id={case_id!r}",
                         "    run:",
                         "        run_case(CASES[params.case_id])",
@@ -581,8 +632,7 @@ class Galerna:
                     [
                         f"rule {group_id}:",
                         f"    output: {str(done_file)!r}",
-                        f"    threads: {self.run_config.cpus_per_task}",
-                        *self._snakemake_rule_resource_lines(),
+                        *self._snakemake_rule_directive_lines(),
                         f"    params: case_ids={case_ids!r}",
                         "    run:",
                         "        run_bulk(params.case_ids, output[0], threads)",
@@ -606,17 +656,29 @@ class Galerna:
         snakefile_path.write_text(snakefile + "\n")
         self.logger.debug("Snakefile saved to %s", snakefile_path)
 
-    def _snakemake_rule_resource_lines(self) -> list[str]:
-        resources = []
-        if self.run_config.mem_mb is not None:
-            resources.append(f"mem_mb={self.run_config.mem_mb}")
-        if self.run_config.runtime is not None:
-            resources.append(f"runtime={self.run_config.runtime}")
-        if self.run_config.partition is not None:
-            resources.append(f"slurm_partition={self.run_config.partition!r}")
-        if not resources:
-            return []
-        return [f"    resources: {', '.join(resources)}"]
+    def _snakemake_rule_directive_lines(self) -> list[str]:
+        lines = []
+        threads = self.run_config.snakemake.rule.threads
+        if threads is not None:
+            lines.append(f"    threads: {threads}")
+
+        resources = self._snakemake_key_value_args(
+            self.run_config.snakemake.rule.resources
+        )
+        if resources:
+            lines.append(f"    resources: {', '.join(resources)}")
+        return lines
+
+    def _snakemake_key_value_args(self, values: dict[str, Any]) -> list[str]:
+        return [
+            f"{key}={self._snakemake_value(value)}"
+            for key, value in values.items()
+        ]
+
+    def _snakemake_value(self, value: Any) -> str:
+        if isinstance(value, str):
+            return repr(value)
+        return repr(value)
 
     def _snakemake_cases_prelude(self) -> str:
         layout = self.cases_config.layout
@@ -788,14 +850,14 @@ def run_bulk(case_ids, done_file, threads):
         ]
 
         if self.run_config.executor == "local":
-            command.extend(["--cores", str(self.run_config.cores)])
+            command.extend(self._snakemake_cli_args())
             command.extend(targets)
         elif self.run_config.executor == "slurm":
             command.extend(["--executor", "slurm"])
-            jobs = self.run_config.max_jobs or self.run_config.cores
-            command.extend(["--jobs", str(jobs)])
+            if "jobs" not in self.run_config.snakemake.cli:
+                command.extend(["--jobs", "unlimited"])
+            command.extend(self._snakemake_cli_args())
             command.extend(targets)
-            command.extend(self._snakemake_default_resource_args())
         else:
             raise NotImplementedError(
                 f"run.backend: snakemake does not support run.executor: "
@@ -804,17 +866,24 @@ def run_bulk(case_ids, done_file, threads):
 
         return command
 
-    def _snakemake_default_resource_args(self) -> list[str]:
-        resources = []
-        if self.run_config.mem_mb is not None:
-            resources.append(f"mem_mb={self.run_config.mem_mb}")
-        if self.run_config.runtime is not None:
-            resources.append(f"runtime={self.run_config.runtime}")
-        if self.run_config.partition is not None:
-            resources.append(f"slurm_partition={self.run_config.partition}")
-        if not resources:
-            return []
-        return ["--default-resources", *resources]
+    def _snakemake_cli_args(self) -> list[str]:
+        args = []
+        for key, value in self.run_config.snakemake.cli.items():
+            flag = f"--{key}"
+            if value is True:
+                args.append(flag)
+            elif value is False or value is None:
+                continue
+            elif isinstance(value, dict):
+                args.extend([flag, *self._snakemake_cli_key_value_args(value)])
+            elif isinstance(value, list):
+                args.extend([flag, *[str(item) for item in value]])
+            else:
+                args.extend([flag, str(value)])
+        return args
+
+    def _snakemake_cli_key_value_args(self, values: dict[str, Any]) -> list[str]:
+        return [f"{key}={value}" for key, value in values.items()]
 
     def _snakemake_targets(
         self, contexts_to_run: list[dict], cases: list[int] | None

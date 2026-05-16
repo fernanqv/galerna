@@ -258,7 +258,7 @@ def test_cli_run_reports_bulk_partial_group_error_without_traceback(tmp_path):
                 "  backend: snakemake",
                 "  mode: bulk",
                 "  executor: local",
-                "  tasks_per_job: 2",
+                "  cases_per_job: 2",
             ]
         )
     )

@@ -30,6 +30,7 @@ def test_snakemake_cases_build_writes_generated_snakefile(tmp_path):
     assert "rule all:" in content
     assert "rule case_0:" in content
     assert "rule case_1:" in content
+    assert "threads:" not in content
     assert "run_case(CASES[params.case_id])" in content
 
 
@@ -43,8 +44,8 @@ def test_snakemake_bulk_build_writes_generated_snakefile(tmp_path):
             "backend": "snakemake",
             "mode": "bulk",
             "executor": "local",
-            "tasks_per_job": 2,
-            "cpus_per_task": 2,
+            "cases_per_job": 2,
+            "snakemake": {"rule": {"threads": 2}},
         },
     )
 
@@ -69,10 +70,16 @@ def test_snakemake_rules_include_threads_and_slurm_resources(tmp_path):
             "backend": "snakemake",
             "mode": "cases",
             "executor": "slurm",
-            "cpus_per_task": 4,
-            "partition": "meteo_long",
-            "runtime": 30,
-            "mem_mb": 1000,
+            "snakemake": {
+                "rule": {
+                    "threads": 4,
+                    "resources": {
+                        "mem_mb_per_cpu": 1000,
+                        "runtime": 30,
+                        "slurm_partition": "meteo_long",
+                    },
+                }
+            },
         },
     )
 
@@ -80,12 +87,13 @@ def test_snakemake_rules_include_threads_and_slurm_resources(tmp_path):
 
     content = (output_dir / ".galerna" / "Snakefile").read_text()
     assert "threads: 4" in content
-    assert "resources: mem_mb=1000, runtime=30, slurm_partition='meteo_long'" in (
-        content
-    )
+    assert (
+        "resources: mem_mb_per_cpu=1000, runtime=30, "
+        "slurm_partition='meteo_long'"
+    ) in content
 
 
-def test_snakemake_slurm_command_uses_executor_jobs_and_resources(
+def test_snakemake_slurm_command_uses_executor_jobs_and_cli_args(
     tmp_path, monkeypatch
 ):
     output_dir = tmp_path / "output"
@@ -97,12 +105,18 @@ def test_snakemake_slurm_command_uses_executor_jobs_and_resources(
             "backend": "snakemake",
             "mode": "bulk",
             "executor": "slurm",
-            "tasks_per_job": 2,
-            "cpus_per_task": 16,
-            "max_jobs": 20,
-            "partition": "meteo_long",
-            "runtime": 120,
-            "mem_mb": 4000,
+            "cases_per_job": 2,
+            "snakemake": {
+                "rule": {
+                    "threads": 16,
+                    "resources": {"runtime": 120, "mem_mb_per_cpu": 4000},
+                },
+                "cli": {
+                    "jobs": 20,
+                    "keep-going": True,
+                    "default-resources": {"disk_mb": 2000},
+                },
+            },
         },
     )
     commands = []
@@ -125,14 +139,74 @@ def test_snakemake_slurm_command_uses_executor_jobs_and_resources(
     ]
     assert "--jobs" in command
     assert command[command.index("--jobs") + 1] == "20"
-    assert str(output_dir / ".galerna" / "done" / "bulk_0000.done") in command
+    assert "--keep-going" in command
     assert "--default-resources" in command
-    assert command.index(str(output_dir / ".galerna" / "done" / "bulk_0000.done")) < (
-        command.index("--default-resources")
+    assert "disk_mb=2000" in command
+    assert str(output_dir / ".galerna" / "done" / "bulk_0000.done") in command
+
+
+def test_snakemake_slurm_command_defaults_to_unlimited_jobs(tmp_path, monkeypatch):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1]},
+        command="echo {{station}}",
+        run={"backend": "snakemake", "mode": "cases", "executor": "slurm"},
     )
-    assert "mem_mb=4000" in command
-    assert "runtime=120" in command
-    assert "slurm_partition=meteo_long" in command
+    commands = []
+
+    def capture_run(command, check):
+        commands.append(command)
+
+    monkeypatch.setattr(subprocess, "run", capture_run)
+
+    wrapper.run_cases()
+
+    command = commands[0]
+    assert "--jobs" in command
+    assert command[command.index("--jobs") + 1] == "unlimited"
+
+
+def test_snakemake_local_command_uses_cli_cores(tmp_path, monkeypatch):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1]},
+        command="echo {{station}}",
+        run={
+            "backend": "snakemake",
+            "mode": "cases",
+            "executor": "local",
+            "snakemake": {"cli": {"cores": 2}},
+        },
+    )
+    commands = []
+
+    def capture_run(command, check):
+        commands.append(command)
+
+    monkeypatch.setattr(subprocess, "run", capture_run)
+
+    wrapper.run_cases()
+
+    command = commands[0]
+    assert "--cores" in command
+    assert command[command.index("--cores") + 1] == "2"
+
+
+def test_snakemake_rejects_old_run_keys(tmp_path):
+    with pytest.raises(ValueError, match="Unsupported run key"):
+        Galerna(
+            output_dir=str(tmp_path / "output"),
+            variable_parameters={"station": [1]},
+            command="echo {{station}}",
+            run={
+                "backend": "snakemake",
+                "mode": "bulk",
+                "executor": "local",
+                "tasks_per_job": 2,
+            },
+        )
 
 
 @pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not found")
@@ -149,7 +223,7 @@ def test_snakemake_cases_local_executor_runs_selected_cases(tmp_path):
             "backend": "snakemake",
             "mode": "cases",
             "executor": "local",
-            "cores": 1,
+            "snakemake": {"cli": {"cores": 1}},
         },
     )
 
@@ -181,7 +255,7 @@ def test_snakemake_cases_shared_layout_uses_case_done_and_group_status(tmp_path)
             "backend": "snakemake",
             "mode": "cases",
             "executor": "local",
-            "cores": 1,
+            "snakemake": {"cli": {"cores": 1}},
         },
     )
 
@@ -216,9 +290,11 @@ def test_snakemake_bulk_local_executor_runs_complete_group(tmp_path):
             "backend": "snakemake",
             "mode": "bulk",
             "executor": "local",
-            "tasks_per_job": 2,
-            "cpus_per_task": 2,
-            "cores": 2,
+            "cases_per_job": 2,
+            "snakemake": {
+                "rule": {"threads": 2},
+                "cli": {"cores": 2},
+            },
         },
     )
 
@@ -249,7 +325,7 @@ def test_snakemake_bulk_rejects_partial_case_group(tmp_path):
             "backend": "snakemake",
             "mode": "bulk",
             "executor": "local",
-            "tasks_per_job": 2,
+            "cases_per_job": 2,
         },
     )
 

@@ -57,7 +57,9 @@ run:
   backend: snakemake
   mode: cases
   executor: local
-  cores: 4
+  snakemake:
+    cli:
+      cores: 4
 ```
 
 Templates are optional. Use them when Galerna should render input files before running each case. If the command can use rendered variables directly, or if inputs already exist, omit `templates_dir`.
@@ -290,10 +292,12 @@ run:
   backend: snakemake
   mode: cases
   executor: local
-  cores: 2
+  snakemake:
+    cli:
+      cores: 2
 ```
 
-Each Galerna case becomes one Snakemake task. `cores` is the total local core budget Snakemake may use.
+Each Galerna case becomes one Snakemake task. `snakemake.cli.cores` is the total local core budget Snakemake may use.
 
 Galerna generates:
 
@@ -312,7 +316,9 @@ run:
   backend: snakemake
   mode: cases
   executor: local
-  cores: 2
+  snakemake:
+    cli:
+      cores: 2
 ```
 
 ## Snakemake SLURM Cases
@@ -337,10 +343,12 @@ run:
   backend: snakemake
   mode: cases
   executor: slurm
-  max_jobs: 16
-  partition: "meteo_long"
-  runtime: 10
-  mem_mb: 1000
+  snakemake:
+    rule:
+      resources:
+        runtime: 10
+        mem_mb: 1000
+        slurm_partition: "meteo_long"
 ```
 
 Conceptually:
@@ -351,7 +359,11 @@ case_0001 -> SLURM job
 case_0002 -> SLURM job
 ```
 
-`max_jobs` is passed to Snakemake as the job limit. `partition`, `runtime`, `mem_mb`, and `cpus_per_task` are mapped into Snakemake resources.
+`snakemake.rule.resources` is rendered inside each generated Snakemake rule.
+For SLURM, Galerna passes `--jobs unlimited` unless `snakemake.cli.jobs` is
+provided.
+Use `snakemake.cli.default-resources` only when you want Snakemake-level
+fallback resources instead of per-rule resources.
 
 Run this on a system where SLURM and the Snakemake SLURM executor plugin are available.
 
@@ -377,12 +389,16 @@ run:
   backend: snakemake
   mode: bulk
   executor: slurm
-  tasks_per_job: 16
-  cpus_per_task: 16
-  max_jobs: 100
-  partition: "meteo_long"
-  runtime: 10
-  mem_mb: 1000
+  cases_per_job: 16
+  snakemake:
+    rule:
+      threads: 16
+      resources:
+        runtime: 10
+        mem_mb: 1000
+        slurm_partition: "meteo_long"
+    cli:
+      jobs: 100
 ```
 
 Conceptually:
@@ -396,11 +412,11 @@ bulk_0006 -> case_0096 ... case_0099
 
 The parameters mean:
 
-- `tasks_per_job`: number of Galerna cases grouped into one Snakemake job.
-- `cpus_per_task`: cores requested by each Snakemake job, and maximum number of case commands Galerna may run concurrently inside that job.
-- `max_jobs`: maximum number of Snakemake jobs submitted or active at once.
+- `cases_per_job`: number of Galerna cases grouped into one Snakemake job.
+- `snakemake.rule.threads`: threads requested by each Snakemake job, and maximum number of case commands Galerna may run concurrently inside that job.
+- `snakemake.cli.jobs`: maximum number of Snakemake jobs submitted or active at once.
 
-With `tasks_per_job: 16` and `cpus_per_task: 16`, each full bulk job runs 16 case commands at the same time inside one SLURM allocation.
+With `cases_per_job: 16` and `threads: 16`, each full bulk job runs 16 case commands at the same time inside one SLURM allocation.
 
 ## Snakemake Local Bulk
 
@@ -411,9 +427,12 @@ run:
   backend: snakemake
   mode: bulk
   executor: local
-  tasks_per_job: 2
-  cpus_per_task: 2
-  cores: 2
+  cases_per_job: 2
+  snakemake:
+    rule:
+      threads: 2
+    cli:
+      cores: 2
 ```
 
 With four cases:
@@ -423,10 +442,10 @@ bulk_0000 -> cases 0000, 0001
 bulk_0001 -> cases 0002, 0003
 ```
 
-`cores` is the local Snakemake budget. `cpus_per_task` is the size of each bulk job. In local bulk mode:
+`snakemake.cli.cores` is the local Snakemake budget. `snakemake.rule.threads` is the size of each bulk job. In local bulk mode:
 
 ```text
-number of simultaneous bulk jobs ~= floor(cores / cpus_per_task)
+number of simultaneous bulk jobs ~= floor(cli.cores / rule.threads)
 ```
 
 ## Selecting Cases
@@ -441,7 +460,7 @@ galerna status --cases 0,2-4
 
 The manifest always contains all cases. `--cases` selects which cases to build, run, or show.
 
-In Snakemake bulk mode, `--cases` must select complete groups. For example, with `tasks_per_job: 2`, `--cases 0-1` is valid but `--cases 1` is rejected because it would select only part of `bulk_0000`.
+In Snakemake bulk mode, `--cases` must select complete groups. For example, with `cases_per_job: 2`, `--cases 0-1` is valid but `--cases 1` is rejected because it would select only part of `bulk_0000`.
 
 ## Status Files
 

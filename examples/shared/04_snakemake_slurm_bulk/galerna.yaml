@@ -15,9 +15,11 @@ run:
   backend: snakemake
   mode: bulk
   executor: slurm
-  tasks_per_job: 16
-  cpus_per_task: 16
-  max_jobs: 100
-  partition: "meteo_long"
-  runtime: 10
-  mem_mb: 1000
+  cases_per_job: 16
+  snakemake:
+    rule:
+      threads: 16
+      resources:
+        runtime: 10
+        mem_mb: 1000
+        slurm_partition: "meteo_long"

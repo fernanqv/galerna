@@ -275,10 +275,11 @@ output/
   0000/
     galerna.out
     galerna.err
-    galerna.status
     .galerna.done
   .galerna/
     cases.tsv
+    status/
+      status_0000.tsv
 ```
 
 This is the best starting point when your model expects a working directory per case.
@@ -327,6 +328,28 @@ Reserved Galerna states include:
 - `FAILED`: execution failed.
 
 Users may append custom states such as `QC_OK`, `TRANSFERRED`, or `ARCHIVED` to status files.
+
+Status history is stored under `output/.galerna/status/`. For directory layout,
+logs remain in each case directory, but status files live outside the model run
+directory. Large campaigns on shared filesystems can disable status history:
+
+```yaml
+status:
+  mode: none
+```
+
+With `status.mode: none`, `galerna status` infers state from `cases.tsv` and
+technical done markers.
+
+Stdout and stderr logs can also be discarded independently:
+
+```yaml
+logs:
+  stdout: discard
+  stderr: file
+```
+
+Discarded streams are written to `/dev/null` in `cases.tsv`.
 
 ```bash
 galerna status

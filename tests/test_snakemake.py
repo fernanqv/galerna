@@ -236,7 +236,9 @@ def test_snakemake_cases_local_executor_runs_selected_cases(tmp_path):
 
     statuses = wrapper.status_cases()
     assert [row["status"] for row in statuses] == ["NOT_BUILT", "DONE"]
-    status_rows = read_status_rows(output_dir / "0001" / "galerna.status")
+    status_rows = read_status_rows(
+        output_dir / ".galerna" / "status" / "status_0001.tsv"
+    )
     assert [row["status"] for row in status_rows] == ["BUILT", "STARTED", "DONE"]
 
 

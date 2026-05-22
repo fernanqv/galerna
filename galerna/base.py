@@ -58,7 +58,13 @@ class RunConfig:
 
 @dataclass
 class StatusConfig:
-    mode: str = "auto"
+    mode: str = "history"
+
+
+@dataclass
+class LogsConfig:
+    stdout: str = "file"
+    stderr: str = "file"
 
 
 class Galerna:
@@ -83,6 +89,7 @@ class Galerna:
         cases: dict | None = None,
         run: dict | None = None,
         status: dict | None = None,
+        logs: dict | None = None,
         log_level: str = "INFO",
         log_file: str | None = None,
         log_console: bool | None = None,
@@ -112,6 +119,7 @@ class Galerna:
         self.cases_config = self._normalize_cases_config(cases)
         self.run_config = self._normalize_run_config(run)
         self.status_config = self._normalize_status_config(status)
+        self.logs_config = self._normalize_logs_config(logs)
 
         self._validate_config()
         self._env = self._create_template_env()
@@ -167,6 +175,10 @@ class Galerna:
                 },
             },
             "status": {"mode": self.status_config.mode},
+            "logs": {
+                "stdout": self.logs_config.stdout,
+                "stderr": self.logs_config.stderr,
+            },
         }
 
     def _load_variable_parameters(self, variable_parameters: dict | str | None) -> dict:
@@ -243,7 +255,19 @@ class Galerna:
 
     def _normalize_status_config(self, status: dict | None) -> StatusConfig:
         status = status or {}
-        return StatusConfig(mode=status.get("mode", "auto"))
+        mode = status.get("mode", "history")
+        if mode == "auto":
+            mode = "history"
+        return StatusConfig(mode=mode)
+
+    def _normalize_logs_config(self, logs: dict | None) -> LogsConfig:
+        logs = logs or {}
+        if not isinstance(logs, dict):
+            raise ValueError("logs must be a mapping.")
+        return LogsConfig(
+            stdout=logs.get("stdout", "file"),
+            stderr=logs.get("stderr", "file"),
+        )
 
     def _validate_config(self) -> None:
         if self.cases_config.layout not in {"directories", "shared"}:
@@ -262,6 +286,15 @@ class Galerna:
 
         if self.run_config.mode not in {"cases", "bulk"}:
             raise ValueError("run.mode must be 'cases' or 'bulk'.")
+
+        if self.status_config.mode not in {"history", "none"}:
+            raise ValueError("status.mode must be 'history' or 'none'.")
+
+        if self.logs_config.stdout not in {"file", "discard"}:
+            raise ValueError("logs.stdout must be 'file' or 'discard'.")
+
+        if self.logs_config.stderr not in {"file", "discard"}:
+            raise ValueError("logs.stderr must be 'file' or 'discard'.")
 
         if (
             not isinstance(self.run_config.cases_per_job, int)
@@ -418,9 +451,11 @@ class Galerna:
         status_group = self._status_group_for_context(context)
 
         if self.cases_config.layout == "directories":
-            context["stdout_log"] = str(case_dir / "galerna.out")
-            context["stderr_log"] = str(case_dir / "galerna.err")
-            context["status_file"] = str(case_dir / "galerna.status")
+            context["stdout_log"] = self._log_path(case_dir / "galerna.out", "stdout")
+            context["stderr_log"] = self._log_path(case_dir / "galerna.err", "stderr")
+            context["status_file"] = str(
+                galerna_dir / "status" / f"status_{status_group}.tsv"
+            )
             context["status_group"] = status_group
             if (
                 self.run_config.backend == "snakemake"
@@ -433,8 +468,12 @@ class Galerna:
                 context["done_file"] = str(case_dir / ".galerna.done")
             return
 
-        context["stdout_log"] = str(galerna_dir / "logs" / f"{case_id}.out")
-        context["stderr_log"] = str(galerna_dir / "logs" / f"{case_id}.err")
+        context["stdout_log"] = self._log_path(
+            galerna_dir / "logs" / f"{case_id}.out", "stdout"
+        )
+        context["stderr_log"] = self._log_path(
+            galerna_dir / "logs" / f"{case_id}.err", "stderr"
+        )
         context["status_group"] = status_group
         context["status_file"] = str(
             galerna_dir / "status" / f"status_{context['status_group']}.tsv"
@@ -443,6 +482,11 @@ class Galerna:
         context["done_file"] = str(
             galerna_dir / "done" / f"{done_group}.done"
         )
+
+    def _log_path(self, file_path: Path, stream: str) -> str:
+        if getattr(self.logs_config, stream) == "discard":
+            return os.devnull
+        return str(file_path)
 
     def _status_group_for_context(self, context: dict) -> str:
         if self.run_config.mode != "bulk":
@@ -682,6 +726,7 @@ class Galerna:
 
     def _snakemake_cases_prelude(self) -> str:
         layout = self.cases_config.layout
+        status_mode = self.status_config.mode
         return f'''import csv
 import subprocess
 import threading
@@ -691,6 +736,7 @@ from pathlib import Path
 
 MANIFEST = Path({str(Path(self.manifest_path).resolve())!r})
 LAYOUT = {layout!r}
+STATUS_MODE = {status_mode!r}
 CASES = {{}}
 STATUS_LOCKS = {{}}
 with MANIFEST.open(newline="") as f:
@@ -707,24 +753,19 @@ def status_lock(status_file):
 
 
 def append_status(row, status, message):
+    if STATUS_MODE == "none":
+        return
+
     status_file = Path(row["status_file"])
     status_file.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).isoformat()
-    if LAYOUT == "directories":
-        fieldnames = ["timestamp", "status", "message"]
-        status_row = {{
-            "timestamp": timestamp,
-            "status": status,
-            "message": message,
-        }}
-    else:
-        fieldnames = ["timestamp", "case_id", "status", "message"]
-        status_row = {{
-            "timestamp": timestamp,
-            "case_id": row["case_id"],
-            "status": status,
-            "message": message,
-        }}
+    fieldnames = ["timestamp", "case_id", "status", "message"]
+    status_row = {{
+        "timestamp": timestamp,
+        "case_id": row["case_id"],
+        "status": status,
+        "message": message,
+    }}
 
     with status_lock(status_file):
         write_header = not status_file.exists()
@@ -811,6 +852,7 @@ def run_bulk(case_ids, done_file, threads):
         contexts_to_run = self._select_contexts(cases)
         self._ensure_cases_built(contexts_to_run)
         total = len(contexts_to_run)
+        self._successful_case_ids: set[str] = set()
 
         for position, context in enumerate(contexts_to_run, start=1):
             if progress:
@@ -943,7 +985,18 @@ def run_bulk(case_ids, done_file, threads):
             for context in contexts
             if self._case_needs_build(context)
         ]
-        if unbuilt_cases or not Path(self.manifest_path).exists():
+        if not Path(self.manifest_path).exists():
+            self.build_cases(cases=[context["case_num"] for context in contexts])
+            return
+
+        if (
+            self.status_config.mode == "none"
+            and self.cases_config.layout == "shared"
+        ):
+            self.build_cases(cases=[context["case_num"] for context in contexts])
+            return
+
+        if unbuilt_cases:
             self.build_cases(cases=unbuilt_cases)
 
     def _case_needs_build(self, context: dict) -> bool:
@@ -951,6 +1004,8 @@ def run_bulk(case_ids, done_file, threads):
             context["case_dir"]
         ).exists():
             return True
+        if self.status_config.mode == "none":
+            return False
         return self._latest_status(context, execution=True) is None
 
     def _run_case_local(self, context: dict) -> None:
@@ -988,6 +1043,7 @@ def run_bulk(case_ids, done_file, threads):
 
         if result.returncode == 0:
             self._append_status(context, "DONE", "exit_code=0")
+            self._successful_case_ids.add(context["case_id"])
             self._mark_done(context)
             return
 
@@ -995,25 +1051,20 @@ def run_bulk(case_ids, done_file, threads):
         raise subprocess.CalledProcessError(result.returncode, command)
 
     def _append_status(self, context: dict, status: str, message: str) -> None:
+        if self.status_config.mode == "none":
+            return
+
         status_file = Path(context["status_file"])
         status_file.parent.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(UTC).isoformat()
 
-        if self.cases_config.layout == "directories":
-            fieldnames = ["timestamp", "status", "message"]
-            row = {
-                "timestamp": timestamp,
-                "status": status,
-                "message": message,
-            }
-        else:
-            fieldnames = ["timestamp", "case_id", "status", "message"]
-            row = {
-                "timestamp": timestamp,
-                "case_id": context["case_id"],
-                "status": status,
-                "message": message,
-            }
+        fieldnames = ["timestamp", "case_id", "status", "message"]
+        row = {
+            "timestamp": timestamp,
+            "case_id": context["case_id"],
+            "status": status,
+            "message": message,
+        }
 
         write_header = not status_file.exists()
         with status_file.open("a", newline="") as f:
@@ -1023,6 +1074,8 @@ def run_bulk(case_ids, done_file, threads):
             writer.writerow(row)
 
     def _mark_built(self, context: dict) -> None:
+        if self.status_config.mode == "none":
+            return
         if self._latest_status(context, execution=True) is not None:
             return
         self._append_status(context, "BUILT", "case built")
@@ -1047,9 +1100,17 @@ def run_bulk(case_ids, done_file, threads):
             if context["status_group"] == status_group
         ]
         return all(
-            self._latest_status(context, execution=True) == "DONE"
+            self._case_done_for_group(context)
             for context in group_contexts
         )
+
+    def _case_done_for_group(self, context: dict) -> bool:
+        if self.status_config.mode == "none":
+            if Path(context["done_file"]).exists():
+                return True
+            successful_case_ids = getattr(self, "_successful_case_ids", set())
+            return context["case_id"] in successful_case_ids
+        return self._latest_status(context, execution=True) == "DONE"
 
     def _latest_status_row(
         self, context: dict, execution: bool = False
@@ -1062,7 +1123,9 @@ def run_bulk(case_ids, done_file, threads):
         with status_file.open(newline="") as f:
             reader = csv.DictReader(f, delimiter="\t")
             for row in reader:
-                if self.cases_config.layout == "shared":
+                if "case_id" in row and row.get("case_id") != context["case_id"]:
+                    continue
+                if self.cases_config.layout == "shared" and "case_id" not in row:
                     if row.get("case_id") != context["case_id"]:
                         continue
                 if execution and row.get("status") not in EXECUTION_STATUSES:
@@ -1105,7 +1168,21 @@ def run_bulk(case_ids, done_file, threads):
     ) -> list[dict[str, str]]:
         contexts_to_check = self._status_contexts(cases)
         statuses = []
+        manifest_exists = Path(self.manifest_path).exists()
         for context in contexts_to_check:
+            done = "yes" if Path(context["done_file"]).exists() else "no"
+            if self.status_config.mode == "none" and manifest_exists:
+                statuses.append(
+                    {
+                        "case_id": context["case_id"],
+                        "status": "DONE" if done == "yes" else "BUILT",
+                        "timestamp": "",
+                        "message": "inferred from manifest and done marker",
+                        "done": done,
+                    }
+                )
+                continue
+
             latest_row = self._latest_status_row(context, execution=execution)
             if latest_row is None:
                 statuses.append(
@@ -1114,7 +1191,7 @@ def run_bulk(case_ids, done_file, threads):
                         "status": "NOT_BUILT",
                         "timestamp": "",
                         "message": "",
-                        "done": "yes" if Path(context["done_file"]).exists() else "no",
+                        "done": done,
                     }
                 )
                 continue
@@ -1125,7 +1202,7 @@ def run_bulk(case_ids, done_file, threads):
                     "status": latest_row.get("status", ""),
                     "timestamp": latest_row.get("timestamp", ""),
                     "message": latest_row.get("message", ""),
-                    "done": "yes" if Path(context["done_file"]).exists() else "no",
+                    "done": done,
                 }
             )
         return statuses

@@ -24,6 +24,7 @@ def test_minimal_build_writes_full_manifest(tmp_path):
     rows = read_manifest(output_dir)
     assert [row["case_id"] for row in rows] == ["0000", "0001", "0002"]
     assert [row["command"] for row in rows] == ["echo 1", "echo 2", "echo 3"]
+    assert rows[0]["status_file"].endswith(".galerna/status/status_0000.tsv")
     assert (output_dir / "0000").is_dir()
     assert (output_dir / "0001").is_dir()
     assert (output_dir / "0002").is_dir()

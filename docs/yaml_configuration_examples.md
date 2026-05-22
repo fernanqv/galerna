@@ -175,15 +175,16 @@ runs/
   0000/
     galerna.out
     galerna.err
-    galerna.status
     .galerna.done
   0001/
     galerna.out
     galerna.err
-    galerna.status
     .galerna.done
   .galerna/
     cases.tsv
+    status/
+      status_0000.tsv
+      status_0001.tsv
 ```
 
 ## Directory Layout With Templates
@@ -466,7 +467,7 @@ In Snakemake bulk mode, `--cases` must select complete groups. For example, with
 
 Galerna writes append-only status logs. The important distinction is:
 
-- `galerna.status` and `status_<group_id>.tsv`: human/historical logs.
+- `status_<group_id>.tsv`: human/historical logs under `.galerna/status/`.
 - `.galerna.done` and `.galerna/done/*.done`: technical success markers for local execution and workflow engines.
 
 `galerna status` reads the manifest and status files. It does not need to query Snakemake or SLURM.
@@ -481,17 +482,18 @@ Reserved Galerna states include:
 
 Users may append custom status lines after Galerna has run. Galerna should accept states such as `QC_OK`, `TRANSFERRED`, or `ARCHIVED`.
 
-For directory layout:
+Status history can be disabled for large campaigns:
 
-```tsv
-timestamp	status	message
-2026-05-10T11:55:00Z	BUILT	case built
-2026-05-10T12:00:00Z	STARTED	
-2026-05-10T12:03:10Z	DONE	exit_code=0
-2026-05-10T12:10:00Z	QC_OK	output checked manually
+```yaml
+status:
+  mode: none
 ```
 
-For shared layout, include `case_id`:
+With `status.mode: none`, Galerna does not write `BUILT`, `STARTED`, `DONE`, or
+`FAILED` rows. `galerna status` infers `DONE` from the done marker and otherwise
+reports a manifest-backed `BUILT` state.
+
+For both directory and shared layout, status rows include `case_id`:
 
 ```tsv
 timestamp	case_id	status	message
@@ -499,6 +501,15 @@ timestamp	case_id	status	message
 2026-05-10T12:00:00Z	case_0000	STARTED	
 2026-05-10T12:03:10Z	case_0000	DONE	exit_code=0
 2026-05-10T12:10:00Z	case_0000	QC_OK	output checked manually
+```
+
+Logs can be discarded independently. The corresponding manifest field is
+written as `/dev/null`:
+
+```yaml
+logs:
+  stdout: discard
+  stderr: file
 ```
 
 The rule for users is: append new lines, do not edit or delete existing status history. Custom statuses do not replace `.galerna.done`, which remains the workflow-engine marker for technical completion.

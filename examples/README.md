@@ -109,9 +109,9 @@ Useful files after a directory-layout run:
 
 ```text
 runs/.galerna/cases.tsv
+runs/.galerna/status/status_<group_id>.tsv
 runs/<case_id>/galerna.out
 runs/<case_id>/galerna.err
-runs/<case_id>/galerna.status
 runs/<case_id>/.galerna.done
 ```
 

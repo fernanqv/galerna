@@ -91,13 +91,18 @@ def _print_run_artifacts(wrapper: Galerna) -> None:
     output_dir = _display_path(wrapper.output_dir)
     if wrapper.run_config.backend == "snakemake":
         print(f"Snakefile: {_display_path(wrapper.snakefile_path)}")
+    status = (
+        "disabled"
+        if wrapper.status_config.mode == "none"
+        else f"{output_dir}/.galerna/status/"
+    )
     if wrapper.cases_config.layout == "shared":
         print(f"Logs: {output_dir}/.galerna/logs/<case_id>.out, <case_id>.err")
-        print(f"Status: {output_dir}/.galerna/status/")
+        print(f"Status: {status}")
         return
 
     print(f"Logs: {output_dir}/<case_id>/galerna.out, galerna.err")
-    print(f"Status: {output_dir}/<case_id>/galerna.status")
+    print(f"Status: {status}")
 
 
 def _print_status_table(statuses: list[dict[str, str]]) -> None:

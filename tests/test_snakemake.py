@@ -28,10 +28,12 @@ def test_snakemake_cases_build_writes_generated_snakefile(tmp_path):
     content = snakefile.read_text()
     assert "MANIFEST =" in content
     assert "rule all:" in content
-    assert "rule case_0:" in content
-    assert "rule case_1:" in content
+    assert "rule case:" in content
+    assert "rule case_0:" not in content
+    assert "rule case_1:" not in content
+    assert str(output_dir / "{case_id}" / ".galerna.done") in content
     assert "threads:" not in content
-    assert "run_case(CASES[params.case_id])" in content
+    assert "run_case(CASES[wildcards.case_id])" in content
 
 
 def test_snakemake_bulk_build_writes_generated_snakefile(tmp_path):

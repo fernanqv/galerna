@@ -632,36 +632,30 @@ class Galerna:
         snakefile_path = Path(self.snakefile_path)
         snakefile_path.parent.mkdir(parents=True, exist_ok=True)
 
-        rule_blocks = []
-        for context in self.cases_context:
-            case_num = context["case_num"]
-            case_id = context["case_id"]
-            rule_blocks.append(
-                "\n".join(
-                    [
-                        f"rule case_{case_num}:",
-                        f"    output: {str(context['done_file'])!r}",
-                        f"    log: stdout={str(context['stdout_log'])!r}, "
-                        f"stderr={str(context['stderr_log'])!r}",
-                        *self._snakemake_rule_directive_lines(),
-                        f"    params: case_id={case_id!r}",
-                        "    run:",
-                        "        run_case(CASES[params.case_id])",
-                    ]
-                )
-            )
-
         done_files = [context["done_file"] for context in self.cases_context]
         snakefile = "\n\n".join(
             [
                 self._snakemake_cases_prelude(),
                 "rule all:\n"
                 f"    input: {done_files!r}",
-                *rule_blocks,
+                "\n".join(
+                    [
+                        "rule case:",
+                        f"    output: {self._snakemake_case_done_pattern()!r}",
+                        *self._snakemake_rule_directive_lines(),
+                        "    run:",
+                        "        run_case(CASES[wildcards.case_id])",
+                    ]
+                ),
             ]
         )
         snakefile_path.write_text(snakefile + "\n")
         self.logger.debug("Snakefile saved to %s", snakefile_path)
+
+    def _snakemake_case_done_pattern(self) -> str:
+        if self.cases_config.layout == "shared":
+            return str(Path(self.galerna_dir).resolve() / "done" / "{case_id}.done")
+        return str(Path(self.output_dir).resolve() / "{case_id}" / ".galerna.done")
 
     def write_snakemake_bulk_workflow(self) -> None:
         snakefile_path = Path(self.snakefile_path)

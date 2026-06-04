@@ -1,0 +1,9 @@
+output_dir: runs
+templates_dir: null
+mode: one_by_one
+
+variable_parameters:
+  # Load stations from a simple CSV file (one value per line)
+  station: "file:stations.csv"
+
+command: "echo station={{ station }}"

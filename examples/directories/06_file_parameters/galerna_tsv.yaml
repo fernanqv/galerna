@@ -1,0 +1,11 @@
+output_dir: runs
+templates_dir: null
+mode: one_by_one
+
+variable_parameters:
+  station:
+    file: stations.tsv
+    format: tsv
+    column: id
+
+command: "echo {{station}}"

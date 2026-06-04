@@ -392,6 +392,31 @@ class CustomWrapper(Galerna):
 
 `build_case(case_context)` runs after the case directory is created and before templates are rendered.
 
+## Variable Parameters from CSV/TSV Files
+
+Instead of embedding long lists in `galerna.yaml`, you can load simple CSV/TSV files. Two supported syntaxes (YAML examples):
+
+```yaml
+variable_parameters:
+  # short string syntax (file:PATH)
+  station: "file:./stations.csv"
+
+  # dict form with format and optional column selection (for headered TSV/CSV)
+  station2:
+    file: "./stations.tsv"
+    format: "tsv"
+    column: "id"
+```
+
+Currently only CSV/TSV is supported and these are read using Python's stdlib `csv` module (no extra packages required).
+
+### Current limitations
+- Only single-column extraction is supported (returns a flat list of strings).
+- Values are returned as strings (no automatic numeric casting).
+- No header-sniffing beyond column: if the file has a header and you don't set column, the header line will be returned as the first value.
+- No support for richer formats (parquet, Excel) — only CSV/TSV/TXT.
+- Relative paths are only resolved against the current working directory, not the YAML file location.
+
 ## Examples
 
 The `examples/` folder contains executable learning paths:

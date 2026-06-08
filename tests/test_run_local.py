@@ -1,4 +1,5 @@
 import csv
+import os
 import subprocess
 
 import pytest
@@ -35,8 +36,11 @@ def test_run_local_executes_cases_sequentially(tmp_path):
     assert (output_dir / "0000" / ".galerna.done").is_file()
     assert (output_dir / "0001" / ".galerna.done").is_file()
 
-    status_rows = read_status_rows(output_dir / "0000" / "galerna.status")
+    status_rows = read_status_rows(
+        output_dir / ".galerna" / "status" / "status_0000.tsv"
+    )
     assert [row["status"] for row in status_rows] == ["BUILT", "STARTED", "DONE"]
+    assert {row["case_id"] for row in status_rows} == {"0000"}
 
 
 def test_run_local_directory_layout_writes_stdout_and_stderr_logs(tmp_path, capsys):
@@ -59,6 +63,23 @@ def test_run_local_directory_layout_writes_stdout_and_stderr_logs(tmp_path, caps
     captured = capsys.readouterr()
     assert "stdout from 0000" not in captured.out
     assert "stderr from 0000" not in captured.err
+
+
+def test_run_local_can_discard_stdout_without_creating_log_file(tmp_path):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1]},
+        command='python -c \'print("discard me")\'',
+        logs={"stdout": "discard"},
+    )
+
+    wrapper.run_cases()
+
+    rows = read_manifest(output_dir)
+    assert rows[0]["stdout_log"] == os.devnull
+    assert not (output_dir / "0000" / "galerna.out").exists()
+    assert (output_dir / "0000" / "galerna.err").is_file()
 
 
 def test_run_local_cases_subset_only_executes_selected_cases(tmp_path):
@@ -93,7 +114,9 @@ def test_run_local_failure_writes_failed_status_without_done_file(tmp_path):
     with pytest.raises(subprocess.CalledProcessError):
         wrapper.run_cases()
 
-    status_rows = read_status_rows(output_dir / "0000" / "galerna.status")
+    status_rows = read_status_rows(
+        output_dir / ".galerna" / "status" / "status_0000.tsv"
+    )
     assert [row["status"] for row in status_rows] == ["BUILT", "STARTED", "FAILED"]
     assert status_rows[-1]["message"] == "exit_code=7"
     assert (output_dir / "0000" / "galerna.out").read_text() == "boom\n"

@@ -4,14 +4,19 @@ from pathlib import Path
 from galerna import Galerna
 
 
-def append_status(status_file: Path, status: str, message: str = "") -> None:
+def append_status(
+    status_file: Path, case_id: str, status: str, message: str = ""
+) -> None:
     with status_file.open("a", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["timestamp", "status", "message"], delimiter="\t"
+            f,
+            fieldnames=["timestamp", "case_id", "status", "message"],
+            delimiter="\t",
         )
         writer.writerow(
             {
                 "timestamp": "2026-05-11T10:00:00+00:00",
+                "case_id": case_id,
                 "status": status,
                 "message": message,
             }
@@ -46,7 +51,12 @@ def test_status_cases_reports_latest_human_status_and_pending_cases(tmp_path):
     )
 
     wrapper.run_cases(cases=[0])
-    append_status(output_dir / "0000" / "galerna.status", "QC_OK", "checked")
+    append_status(
+        output_dir / ".galerna" / "status" / "status_0000.tsv",
+        "0000",
+        "QC_OK",
+        "checked",
+    )
 
     statuses = wrapper.status_cases()
 
@@ -85,6 +95,24 @@ def test_build_cases_records_built_status(tmp_path):
     assert statuses[1]["message"] == "case built"
 
 
+def test_status_none_does_not_write_history_and_infers_from_done(tmp_path):
+    output_dir = tmp_path / "output"
+    wrapper = Galerna(
+        output_dir=str(output_dir),
+        variable_parameters={"station": [1, 2]},
+        command="echo {{station}}",
+        status={"mode": "none"},
+    )
+
+    wrapper.run_cases(cases=[0])
+
+    assert not (output_dir / ".galerna" / "status").exists()
+    statuses = wrapper.status_cases()
+    assert [row["status"] for row in statuses] == ["DONE", "BUILT"]
+    assert [row["done"] for row in statuses] == ["yes", "no"]
+    assert statuses[0]["message"] == "inferred from manifest and done marker"
+
+
 def test_status_cases_execution_view_ignores_custom_statuses(tmp_path):
     output_dir = tmp_path / "output"
     wrapper = Galerna(
@@ -94,7 +122,11 @@ def test_status_cases_execution_view_ignores_custom_statuses(tmp_path):
     )
 
     wrapper.run_cases()
-    append_status(output_dir / "0000" / "galerna.status", "TRANSFERRED")
+    append_status(
+        output_dir / ".galerna" / "status" / "status_0000.tsv",
+        "0000",
+        "TRANSFERRED",
+    )
 
     statuses = wrapper.status_cases(execution=True)
 

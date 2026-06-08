@@ -35,23 +35,36 @@ class WorkflowConfig:
 
 
 @dataclass
+class SnakemakeRuleConfig:
+    threads: int | None = None
+    resources: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class SnakemakeConfig:
+    rule: SnakemakeRuleConfig = field(default_factory=SnakemakeRuleConfig)
+    cli: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class RunConfig:
     backend: str = "local"
     mode: str = "cases"
     executor: str = "local"
-    cores: int = 1
-    cpus_per_task: int = 1
-    tasks_per_job: int = 1
-    max_jobs: int | None = None
-    partition: str | None = None
-    runtime: int | None = None
-    mem_mb: int | None = None
+    cases_per_job: int = 1
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
+    snakemake: SnakemakeConfig = field(default_factory=SnakemakeConfig)
 
 
 @dataclass
 class StatusConfig:
-    mode: str = "auto"
+    mode: str = "history"
+
+
+@dataclass
+class LogsConfig:
+    stdout: str = "file"
+    stderr: str = "file"
 
 
 class Galerna:
@@ -76,6 +89,7 @@ class Galerna:
         cases: dict | None = None,
         run: dict | None = None,
         status: dict | None = None,
+        logs: dict | None = None,
         log_level: str = "INFO",
         log_file: str | None = None,
         log_console: bool | None = None,
@@ -105,6 +119,7 @@ class Galerna:
         self.cases_config = self._normalize_cases_config(cases)
         self.run_config = self._normalize_run_config(run)
         self.status_config = self._normalize_status_config(status)
+        self.logs_config = self._normalize_logs_config(logs)
 
         self._validate_config()
         self._env = self._create_template_env()
@@ -144,21 +159,26 @@ class Galerna:
                 "backend": self.run_config.backend,
                 "mode": self.run_config.mode,
                 "executor": self.run_config.executor,
-                "cores": self.run_config.cores,
-                "cpus_per_task": self.run_config.cpus_per_task,
-                "tasks_per_job": self.run_config.tasks_per_job,
-                "max_jobs": self.run_config.max_jobs,
-                "partition": self.run_config.partition,
-                "runtime": self.run_config.runtime,
-                "mem_mb": self.run_config.mem_mb,
+                "cases_per_job": self.run_config.cases_per_job,
                 "workflow": {
                     "source": self.run_config.workflow.source,
                     "file": self.run_config.workflow.file,
                     "profile": self.run_config.workflow.profile,
                     "config": self.run_config.workflow.config,
                 },
+                "snakemake": {
+                    "rule": {
+                        "threads": self.run_config.snakemake.rule.threads,
+                        "resources": self.run_config.snakemake.rule.resources,
+                    },
+                    "cli": self.run_config.snakemake.cli,
+                },
             },
             "status": {"mode": self.status_config.mode},
+            "logs": {
+                "stdout": self.logs_config.stdout,
+                "stderr": self.logs_config.stderr,
+            },
         }
 
     def _load_variable_parameters(self, variable_parameters: dict | str | None) -> dict:
@@ -186,29 +206,68 @@ class Galerna:
 
     def _normalize_run_config(self, run: dict | None) -> RunConfig:
         run = run or {}
+        if not isinstance(run, dict):
+            raise ValueError("run must be a mapping.")
+
+        allowed_keys = {
+            "backend",
+            "mode",
+            "executor",
+            "cases_per_job",
+            "workflow",
+            "snakemake",
+        }
+        unknown_keys = sorted(set(run) - allowed_keys)
+        if unknown_keys:
+            keys = ", ".join(unknown_keys)
+            raise ValueError(f"Unsupported run key(s): {keys}.")
+
         workflow = run.get("workflow", {}) or {}
+        snakemake = run.get("snakemake", {}) or {}
+        if not isinstance(workflow, dict):
+            raise ValueError("run.workflow must be a mapping.")
+        if not isinstance(snakemake, dict):
+            raise ValueError("run.snakemake must be a mapping.")
+
+        snakemake_rule = snakemake.get("rule", {}) or {}
+        if not isinstance(snakemake_rule, dict):
+            raise ValueError("run.snakemake.rule must be a mapping.")
+
         return RunConfig(
             backend=run.get("backend", "local"),
             mode=run.get("mode", "cases"),
             executor=run.get("executor", "local"),
-            cores=run.get("cores", 1),
-            cpus_per_task=run.get("cpus_per_task", 1),
-            tasks_per_job=run.get("tasks_per_job", 1),
-            max_jobs=run.get("max_jobs"),
-            partition=run.get("partition"),
-            runtime=run.get("runtime"),
-            mem_mb=run.get("mem_mb"),
+            cases_per_job=run.get("cases_per_job", 1),
             workflow=WorkflowConfig(
                 source=workflow.get("source", "generated"),
                 file=workflow.get("file"),
                 profile=workflow.get("profile"),
                 config=workflow.get("config"),
             ),
+            snakemake=SnakemakeConfig(
+                rule=SnakemakeRuleConfig(
+                    threads=snakemake_rule.get("threads"),
+                    resources=snakemake_rule.get("resources", {}) or {},
+                ),
+                cli=snakemake.get("cli", {}) or {},
+            ),
         )
 
     def _normalize_status_config(self, status: dict | None) -> StatusConfig:
         status = status or {}
-        return StatusConfig(mode=status.get("mode", "auto"))
+        mode = status.get("mode", "history")
+        if mode == "auto":
+            mode = "history"
+        return StatusConfig(mode=mode)
+
+    def _normalize_logs_config(self, logs: dict | None) -> LogsConfig:
+        logs = logs or {}
+        if not isinstance(logs, dict):
+            raise ValueError("logs must be a mapping.")
+        return LogsConfig(
+            stdout=logs.get("stdout", "file"),
+            stderr=logs.get("stderr", "file"),
+        )
 
     def _validate_config(self) -> None:
         if self.cases_config.layout not in {"directories", "shared"}:
@@ -228,17 +287,28 @@ class Galerna:
         if self.run_config.mode not in {"cases", "bulk"}:
             raise ValueError("run.mode must be 'cases' or 'bulk'.")
 
-        if self.run_config.tasks_per_job < 1:
-            raise ValueError("run.tasks_per_job must be greater than or equal to 1.")
+        if self.status_config.mode not in {"history", "none"}:
+            raise ValueError("status.mode must be 'history' or 'none'.")
 
-        if self.run_config.cpus_per_task < 1:
-            raise ValueError("run.cpus_per_task must be greater than or equal to 1.")
+        if self.logs_config.stdout not in {"file", "discard"}:
+            raise ValueError("logs.stdout must be 'file' or 'discard'.")
+
+        if self.logs_config.stderr not in {"file", "discard"}:
+            raise ValueError("logs.stderr must be 'file' or 'discard'.")
+
+        if (
+            not isinstance(self.run_config.cases_per_job, int)
+            or self.run_config.cases_per_job < 1
+        ):
+            raise ValueError("run.cases_per_job must be greater than or equal to 1.")
 
         if self.run_config.executor not in {"local", "slurm"}:
             raise ValueError("run.executor must be 'local' or 'slurm'.")
 
         if self.run_config.workflow.source not in {"generated", "user"}:
             raise ValueError("run.workflow.source must be 'generated' or 'user'.")
+
+        self._validate_snakemake_config()
 
         if self.run_config.workflow.source == "generated" and not self.command:
             raise ValueError(
@@ -257,6 +327,21 @@ class Galerna:
             raise ValueError(
                 "templates_dir is not supported with cases.layout: shared."
             )
+
+    def _validate_snakemake_config(self) -> None:
+        threads = self.run_config.snakemake.rule.threads
+        if threads is not None and (not isinstance(threads, int) or threads < 1):
+            raise ValueError(
+                "run.snakemake.rule.threads must be greater than or equal to 1."
+            )
+
+        resources = self.run_config.snakemake.rule.resources
+        if not isinstance(resources, dict):
+            raise ValueError("run.snakemake.rule.resources must be a mapping.")
+
+        cli = self.run_config.snakemake.cli
+        if not isinstance(cli, dict):
+            raise ValueError("run.snakemake.cli must be a mapping.")
 
     def _create_template_env(self) -> Environment | None:
         if self.templates_dir is None:
@@ -281,6 +366,8 @@ class Galerna:
         if not variable_parameters:
             self.cases_context = [{}]
         elif self.mode == "all_combinations":
+            for key, values in variable_parameters.items():
+                self._validate_parameter_sequence(key, values)
             keys = variable_parameters.keys()
             values = variable_parameters.values()
             self.cases_context = [
@@ -307,6 +394,14 @@ class Galerna:
             return self._parse_range(value)
         return value
 
+    def _validate_parameter_sequence(self, key: str, values: Any) -> None:
+        if isinstance(values, str) or not hasattr(values, "__len__"):
+            raise TypeError(
+                f"variable_parameters.{key} must be a sequence of values. "
+                "To load parameters from a YAML file, use "
+                "variable_parameters: 'parameters.yaml' at the top level."
+            )
+
     def _parse_range(self, value: str) -> list[int]:
         match = re.fullmatch(
             r"range\(\s*(-?\d+)\s*,\s*(-?\d+)(?:\s*,\s*(-?\d+))?\s*\)",
@@ -324,10 +419,7 @@ class Galerna:
         self, variable_parameters: dict[str, list], num_cases: int
     ) -> None:
         for key, values in variable_parameters.items():
-            if not hasattr(values, "__len__"):
-                raise TypeError(
-                    f"variable_parameters.{key} must be a sequence in one_by_one mode."
-                )
+            self._validate_parameter_sequence(key, values)
             if len(values) != num_cases:
                 raise ValueError(
                     "All variable_parameters must have the same length in "
@@ -359,9 +451,11 @@ class Galerna:
         status_group = self._status_group_for_context(context)
 
         if self.cases_config.layout == "directories":
-            context["stdout_log"] = str(case_dir / "galerna.out")
-            context["stderr_log"] = str(case_dir / "galerna.err")
-            context["status_file"] = str(case_dir / "galerna.status")
+            context["stdout_log"] = self._log_path(case_dir / "galerna.out", "stdout")
+            context["stderr_log"] = self._log_path(case_dir / "galerna.err", "stderr")
+            context["status_file"] = str(
+                galerna_dir / "status" / f"status_{status_group}.tsv"
+            )
             context["status_group"] = status_group
             if (
                 self.run_config.backend == "snakemake"
@@ -374,8 +468,12 @@ class Galerna:
                 context["done_file"] = str(case_dir / ".galerna.done")
             return
 
-        context["stdout_log"] = str(galerna_dir / "logs" / f"{case_id}.out")
-        context["stderr_log"] = str(galerna_dir / "logs" / f"{case_id}.err")
+        context["stdout_log"] = self._log_path(
+            galerna_dir / "logs" / f"{case_id}.out", "stdout"
+        )
+        context["stderr_log"] = self._log_path(
+            galerna_dir / "logs" / f"{case_id}.err", "stderr"
+        )
         context["status_group"] = status_group
         context["status_file"] = str(
             galerna_dir / "status" / f"status_{context['status_group']}.tsv"
@@ -385,12 +483,17 @@ class Galerna:
             galerna_dir / "done" / f"{done_group}.done"
         )
 
+    def _log_path(self, file_path: Path, stream: str) -> str:
+        if getattr(self.logs_config, stream) == "discard":
+            return os.devnull
+        return str(file_path)
+
     def _status_group_for_context(self, context: dict) -> str:
         if self.run_config.mode != "bulk":
             if self.cases_config.layout == "shared":
                 return "cases"
             return context["case_id"]
-        group_num = context["case_num"] // self.run_config.tasks_per_job
+        group_num = context["case_num"] // self.run_config.cases_per_job
         return f"bulk_{group_num:04d}"
 
     def _done_group_for_shared_layout(self, context: dict) -> str:
@@ -529,37 +632,30 @@ class Galerna:
         snakefile_path = Path(self.snakefile_path)
         snakefile_path.parent.mkdir(parents=True, exist_ok=True)
 
-        rule_blocks = []
-        for context in self.cases_context:
-            case_num = context["case_num"]
-            case_id = context["case_id"]
-            rule_blocks.append(
-                "\n".join(
-                    [
-                        f"rule case_{case_num}:",
-                        f"    output: {str(context['done_file'])!r}",
-                        f"    log: stdout={str(context['stdout_log'])!r}, "
-                        f"stderr={str(context['stderr_log'])!r}",
-                        f"    threads: {self.run_config.cpus_per_task}",
-                        *self._snakemake_rule_resource_lines(),
-                        f"    params: case_id={case_id!r}",
-                        "    run:",
-                        "        run_case(CASES[params.case_id])",
-                    ]
-                )
-            )
-
         done_files = [context["done_file"] for context in self.cases_context]
         snakefile = "\n\n".join(
             [
                 self._snakemake_cases_prelude(),
                 "rule all:\n"
                 f"    input: {done_files!r}",
-                *rule_blocks,
+                "\n".join(
+                    [
+                        "rule case:",
+                        f"    output: {self._snakemake_case_done_pattern()!r}",
+                        *self._snakemake_rule_directive_lines(),
+                        "    run:",
+                        "        run_case(CASES[wildcards.case_id])",
+                    ]
+                ),
             ]
         )
         snakefile_path.write_text(snakefile + "\n")
         self.logger.debug("Snakefile saved to %s", snakefile_path)
+
+    def _snakemake_case_done_pattern(self) -> str:
+        if self.cases_config.layout == "shared":
+            return str(Path(self.galerna_dir).resolve() / "done" / "{case_id}.done")
+        return str(Path(self.output_dir).resolve() / "{case_id}" / ".galerna.done")
 
     def write_snakemake_bulk_workflow(self) -> None:
         snakefile_path = Path(self.snakefile_path)
@@ -574,8 +670,7 @@ class Galerna:
                     [
                         f"rule {group_id}:",
                         f"    output: {str(done_file)!r}",
-                        f"    threads: {self.run_config.cpus_per_task}",
-                        *self._snakemake_rule_resource_lines(),
+                        *self._snakemake_rule_directive_lines(),
                         f"    params: case_ids={case_ids!r}",
                         "    run:",
                         "        run_bulk(params.case_ids, output[0], threads)",
@@ -599,20 +694,33 @@ class Galerna:
         snakefile_path.write_text(snakefile + "\n")
         self.logger.debug("Snakefile saved to %s", snakefile_path)
 
-    def _snakemake_rule_resource_lines(self) -> list[str]:
-        resources = []
-        if self.run_config.mem_mb is not None:
-            resources.append(f"mem_mb={self.run_config.mem_mb}")
-        if self.run_config.runtime is not None:
-            resources.append(f"runtime={self.run_config.runtime}")
-        if self.run_config.partition is not None:
-            resources.append(f"slurm_partition={self.run_config.partition!r}")
-        if not resources:
-            return []
-        return [f"    resources: {', '.join(resources)}"]
+    def _snakemake_rule_directive_lines(self) -> list[str]:
+        lines = []
+        threads = self.run_config.snakemake.rule.threads
+        if threads is not None:
+            lines.append(f"    threads: {threads}")
+
+        resources = self._snakemake_key_value_args(
+            self.run_config.snakemake.rule.resources
+        )
+        if resources:
+            lines.append(f"    resources: {', '.join(resources)}")
+        return lines
+
+    def _snakemake_key_value_args(self, values: dict[str, Any]) -> list[str]:
+        return [
+            f"{key}={self._snakemake_value(value)}"
+            for key, value in values.items()
+        ]
+
+    def _snakemake_value(self, value: Any) -> str:
+        if isinstance(value, str):
+            return repr(value)
+        return repr(value)
 
     def _snakemake_cases_prelude(self) -> str:
         layout = self.cases_config.layout
+        status_mode = self.status_config.mode
         return f'''import csv
 import subprocess
 import threading
@@ -622,6 +730,7 @@ from pathlib import Path
 
 MANIFEST = Path({str(Path(self.manifest_path).resolve())!r})
 LAYOUT = {layout!r}
+STATUS_MODE = {status_mode!r}
 CASES = {{}}
 STATUS_LOCKS = {{}}
 with MANIFEST.open(newline="") as f:
@@ -638,24 +747,19 @@ def status_lock(status_file):
 
 
 def append_status(row, status, message):
+    if STATUS_MODE == "none":
+        return
+
     status_file = Path(row["status_file"])
     status_file.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).isoformat()
-    if LAYOUT == "directories":
-        fieldnames = ["timestamp", "status", "message"]
-        status_row = {{
-            "timestamp": timestamp,
-            "status": status,
-            "message": message,
-        }}
-    else:
-        fieldnames = ["timestamp", "case_id", "status", "message"]
-        status_row = {{
-            "timestamp": timestamp,
-            "case_id": row["case_id"],
-            "status": status,
-            "message": message,
-        }}
+    fieldnames = ["timestamp", "case_id", "status", "message"]
+    status_row = {{
+        "timestamp": timestamp,
+        "case_id": row["case_id"],
+        "status": status,
+        "message": message,
+    }}
 
     with status_lock(status_file):
         write_header = not status_file.exists()
@@ -742,6 +846,7 @@ def run_bulk(case_ids, done_file, threads):
         contexts_to_run = self._select_contexts(cases)
         self._ensure_cases_built(contexts_to_run)
         total = len(contexts_to_run)
+        self._successful_case_ids: set[str] = set()
 
         for position, context in enumerate(contexts_to_run, start=1):
             if progress:
@@ -781,14 +886,14 @@ def run_bulk(case_ids, done_file, threads):
         ]
 
         if self.run_config.executor == "local":
-            command.extend(["--cores", str(self.run_config.cores)])
+            command.extend(self._snakemake_cli_args())
             command.extend(targets)
         elif self.run_config.executor == "slurm":
             command.extend(["--executor", "slurm"])
-            jobs = self.run_config.max_jobs or self.run_config.cores
-            command.extend(["--jobs", str(jobs)])
+            if "jobs" not in self.run_config.snakemake.cli:
+                command.extend(["--jobs", "unlimited"])
+            command.extend(self._snakemake_cli_args())
             command.extend(targets)
-            command.extend(self._snakemake_default_resource_args())
         else:
             raise NotImplementedError(
                 f"run.backend: snakemake does not support run.executor: "
@@ -797,17 +902,24 @@ def run_bulk(case_ids, done_file, threads):
 
         return command
 
-    def _snakemake_default_resource_args(self) -> list[str]:
-        resources = []
-        if self.run_config.mem_mb is not None:
-            resources.append(f"mem_mb={self.run_config.mem_mb}")
-        if self.run_config.runtime is not None:
-            resources.append(f"runtime={self.run_config.runtime}")
-        if self.run_config.partition is not None:
-            resources.append(f"slurm_partition={self.run_config.partition}")
-        if not resources:
-            return []
-        return ["--default-resources", *resources]
+    def _snakemake_cli_args(self) -> list[str]:
+        args = []
+        for key, value in self.run_config.snakemake.cli.items():
+            flag = f"--{key}"
+            if value is True:
+                args.append(flag)
+            elif value is False or value is None:
+                continue
+            elif isinstance(value, dict):
+                args.extend([flag, *self._snakemake_cli_key_value_args(value)])
+            elif isinstance(value, list):
+                args.extend([flag, *[str(item) for item in value]])
+            else:
+                args.extend([flag, str(value)])
+        return args
+
+    def _snakemake_cli_key_value_args(self, values: dict[str, Any]) -> list[str]:
+        return [f"{key}={value}" for key, value in values.items()]
 
     def _snakemake_targets(
         self, contexts_to_run: list[dict], cases: list[int] | None
@@ -867,7 +979,18 @@ def run_bulk(case_ids, done_file, threads):
             for context in contexts
             if self._case_needs_build(context)
         ]
-        if unbuilt_cases or not Path(self.manifest_path).exists():
+        if not Path(self.manifest_path).exists():
+            self.build_cases(cases=[context["case_num"] for context in contexts])
+            return
+
+        if (
+            self.status_config.mode == "none"
+            and self.cases_config.layout == "shared"
+        ):
+            self.build_cases(cases=[context["case_num"] for context in contexts])
+            return
+
+        if unbuilt_cases:
             self.build_cases(cases=unbuilt_cases)
 
     def _case_needs_build(self, context: dict) -> bool:
@@ -875,6 +998,8 @@ def run_bulk(case_ids, done_file, threads):
             context["case_dir"]
         ).exists():
             return True
+        if self.status_config.mode == "none":
+            return False
         return self._latest_status(context, execution=True) is None
 
     def _run_case_local(self, context: dict) -> None:
@@ -912,6 +1037,7 @@ def run_bulk(case_ids, done_file, threads):
 
         if result.returncode == 0:
             self._append_status(context, "DONE", "exit_code=0")
+            self._successful_case_ids.add(context["case_id"])
             self._mark_done(context)
             return
 
@@ -919,25 +1045,20 @@ def run_bulk(case_ids, done_file, threads):
         raise subprocess.CalledProcessError(result.returncode, command)
 
     def _append_status(self, context: dict, status: str, message: str) -> None:
+        if self.status_config.mode == "none":
+            return
+
         status_file = Path(context["status_file"])
         status_file.parent.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(UTC).isoformat()
 
-        if self.cases_config.layout == "directories":
-            fieldnames = ["timestamp", "status", "message"]
-            row = {
-                "timestamp": timestamp,
-                "status": status,
-                "message": message,
-            }
-        else:
-            fieldnames = ["timestamp", "case_id", "status", "message"]
-            row = {
-                "timestamp": timestamp,
-                "case_id": context["case_id"],
-                "status": status,
-                "message": message,
-            }
+        fieldnames = ["timestamp", "case_id", "status", "message"]
+        row = {
+            "timestamp": timestamp,
+            "case_id": context["case_id"],
+            "status": status,
+            "message": message,
+        }
 
         write_header = not status_file.exists()
         with status_file.open("a", newline="") as f:
@@ -947,6 +1068,8 @@ def run_bulk(case_ids, done_file, threads):
             writer.writerow(row)
 
     def _mark_built(self, context: dict) -> None:
+        if self.status_config.mode == "none":
+            return
         if self._latest_status(context, execution=True) is not None:
             return
         self._append_status(context, "BUILT", "case built")
@@ -971,9 +1094,17 @@ def run_bulk(case_ids, done_file, threads):
             if context["status_group"] == status_group
         ]
         return all(
-            self._latest_status(context, execution=True) == "DONE"
+            self._case_done_for_group(context)
             for context in group_contexts
         )
+
+    def _case_done_for_group(self, context: dict) -> bool:
+        if self.status_config.mode == "none":
+            if Path(context["done_file"]).exists():
+                return True
+            successful_case_ids = getattr(self, "_successful_case_ids", set())
+            return context["case_id"] in successful_case_ids
+        return self._latest_status(context, execution=True) == "DONE"
 
     def _latest_status_row(
         self, context: dict, execution: bool = False
@@ -986,7 +1117,9 @@ def run_bulk(case_ids, done_file, threads):
         with status_file.open(newline="") as f:
             reader = csv.DictReader(f, delimiter="\t")
             for row in reader:
-                if self.cases_config.layout == "shared":
+                if "case_id" in row and row.get("case_id") != context["case_id"]:
+                    continue
+                if self.cases_config.layout == "shared" and "case_id" not in row:
                     if row.get("case_id") != context["case_id"]:
                         continue
                 if execution and row.get("status") not in EXECUTION_STATUSES:
@@ -1029,7 +1162,21 @@ def run_bulk(case_ids, done_file, threads):
     ) -> list[dict[str, str]]:
         contexts_to_check = self._status_contexts(cases)
         statuses = []
+        manifest_exists = Path(self.manifest_path).exists()
         for context in contexts_to_check:
+            done = "yes" if Path(context["done_file"]).exists() else "no"
+            if self.status_config.mode == "none" and manifest_exists:
+                statuses.append(
+                    {
+                        "case_id": context["case_id"],
+                        "status": "DONE" if done == "yes" else "BUILT",
+                        "timestamp": "",
+                        "message": "inferred from manifest and done marker",
+                        "done": done,
+                    }
+                )
+                continue
+
             latest_row = self._latest_status_row(context, execution=execution)
             if latest_row is None:
                 statuses.append(
@@ -1038,7 +1185,7 @@ def run_bulk(case_ids, done_file, threads):
                         "status": "NOT_BUILT",
                         "timestamp": "",
                         "message": "",
-                        "done": "yes" if Path(context["done_file"]).exists() else "no",
+                        "done": done,
                     }
                 )
                 continue
@@ -1049,7 +1196,7 @@ def run_bulk(case_ids, done_file, threads):
                     "status": latest_row.get("status", ""),
                     "timestamp": latest_row.get("timestamp", ""),
                     "message": latest_row.get("message", ""),
-                    "done": "yes" if Path(context["done_file"]).exists() else "no",
+                    "done": done,
                 }
             )
         return statuses

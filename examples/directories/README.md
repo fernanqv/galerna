@@ -11,6 +11,7 @@ Templates are optional. The first example renders files into each case directory
 3. `03_snakemake_local_cases`: several cases at once on the local machine.
 4. `04_snakemake_slurm_cases`: one SLURM job per case.
 5. `05_snakemake_slurm_bulk`: grouped cases, with several case commands inside each SLURM job.
+6. `06_snakemake_slurm_mpi_cases`: one SLURM job per case running a 4-rank MPI executable.
 
 Run from any example folder:
 

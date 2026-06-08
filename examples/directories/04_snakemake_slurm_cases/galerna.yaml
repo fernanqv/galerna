@@ -15,7 +15,9 @@ run:
   backend: snakemake
   mode: cases
   executor: slurm
-  max_jobs: 16
-  partition: "meteo_long"
-  runtime: 10
-  mem_mb: 1000
+  snakemake:
+    rule:
+      resources:
+        runtime: 10
+        mem_mb: 1000
+        slurm_partition: "meteo_long"

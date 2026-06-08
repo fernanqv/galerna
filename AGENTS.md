@@ -87,16 +87,20 @@ Galerna may generate files under `<output_dir>/.galerna/`, such as:
 - `cases.tsv`
 - `Snakefile`
 
-For `cases.layout: directories`, per-case logs and status should live in each `case_dir`, for example:
+For `cases.layout: directories`, per-case logs should live in each `case_dir`, for example:
 
 - `galerna.out`
 - `galerna.err`
-- `galerna.status`
 - `.galerna.done` for the local backend and Snakemake cases mode
+
+Status history should live under `<output_dir>/.galerna/status/`, for example:
+
+- `.galerna/status/status_<case_id>.tsv` for cases mode
+- `.galerna/status/status_bulk_0000.tsv` for bulk mode
 
 For Snakemake bulk mode, the technical done marker is per bulk group under `<output_dir>/.galerna/done/bulk_<group_id>.done`, even when `cases.layout: directories`.
 
-`galerna.status` is the human/historical status log. `.galerna.done` and `.galerna/done/*.done` files are technical success markers and should only be created after the corresponding case or group succeeds.
+`status_<group_id>.tsv` is the human/historical status log. `.galerna.done` and `.galerna/done/*.done` files are technical success markers and should only be created after the corresponding case or group succeeds.
 
 Status logs are append-only TSV files. Galerna may reserve statuses such as `BUILT`, `STARTED`, `DONE`, `FAILED`, and future technical states such as `SKIPPED`, but it should accept additional user-defined statuses. Users should be able to append lines such as `QC_OK`, `TRANSFERRED`, or `ARCHIVED` after Galerna finishes, without editing previous lines.
 

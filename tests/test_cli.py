@@ -80,7 +80,7 @@ def test_cli_run_shows_clean_progress_and_summary(tmp_path):
     assert "[2/2] 0001 ... done" in result.stdout
     assert "Completed 2/2 case(s)" in result.stdout
     assert "Logs: output/<case_id>/galerna.out, galerna.err" in result.stdout
-    assert "Status: output/<case_id>/galerna.status" in result.stdout
+    assert "Status: output/.galerna/status/" in result.stdout
     assert "command=echo" not in result.stdout
     assert "INFO" not in result.stderr
 
@@ -219,9 +219,9 @@ def test_cli_status_shows_latest_human_and_execution_status(tmp_path):
         text=True,
         check=True,
     )
-    status_file = tmp_path / "output" / "0000" / "galerna.status"
+    status_file = tmp_path / "output" / ".galerna" / "status" / "status_0000.tsv"
     with status_file.open("a") as f:
-        f.write("2026-05-11T10:00:00+00:00\tQC_OK\tchecked\n")
+        f.write("2026-05-11T10:00:00+00:00\t0000\tQC_OK\tchecked\n")
 
     human_result = subprocess.run(
         [sys.executable, "-m", "galerna.cli", "status"],
@@ -258,7 +258,7 @@ def test_cli_run_reports_bulk_partial_group_error_without_traceback(tmp_path):
                 "  backend: snakemake",
                 "  mode: bulk",
                 "  executor: local",
-                "  tasks_per_job: 2",
+                "  cases_per_job: 2",
             ]
         )
     )

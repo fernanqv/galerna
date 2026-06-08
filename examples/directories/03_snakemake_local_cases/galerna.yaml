@@ -15,4 +15,6 @@ run:
   backend: snakemake
   mode: cases
   executor: local
-  cores: 2
+  snakemake:
+    cli:
+      cores: 2
